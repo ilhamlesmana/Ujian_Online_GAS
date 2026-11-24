@@ -6290,7 +6290,18 @@
           showLoader('Menghubungkan ke server Spreadsheet...');
         }
 
-        const targetSpreadsheetId = getConfiguredClientSpreadsheetId();
+        let targetSpreadsheetId = getConfiguredClientSpreadsheetId();
+        if (!targetSpreadsheetId) {
+          if (funcName === 'getPengaturanWebsite') {
+            return { status: 'error', message: 'CLIENT_SPREADSHEET_ID belum diisi.' };
+          }
+          hideLoader();
+          targetSpreadsheetId = await promptConfigureClientSpreadsheetId();
+          if (!targetSpreadsheetId) {
+            throw new Error('ID Google Spreadsheet belum diisi. Silakan isi CLIENT_SPREADSHEET_ID di index.html.');
+          }
+          showLoader('Memverifikasi ID Spreadsheet...');
+        }
 
         const payloadStr = JSON.stringify({
           action: funcName,
@@ -11489,4 +11500,2254 @@
       function confirmHapusMasterJenis(kodeJenis, namaJenis) {
         Swal.fire({
           title: 'Hapus Jenis Penilaian?',
-... [truncated for diff preview]
+          html: `Hapus <strong>${escapeHtml(namaJenis)}</strong> (${escapeHtml(kodeJenis)}) dari daftar evaluasi pribadi Anda?`,
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonColor: '#ef4444',
+          cancelButtonColor: '#64748b',
+          confirmButtonText: 'Ya, Hapus!',
+          cancelButtonText: 'Batal'
+        }).then(async result => {
+          if (result.isConfirmed) {
+            showLoader('Menghapus jenis penilaian...');
+            try {
+              const guruUsername = currentUser && currentUser.data
+                ? (currentUser.data.username || currentUser.data.id)
+                : '';
+              const res = await callServer('hapusMasterJenisPenilaian', kodeJenis, guruUsername);
+              hideLoader();
+              if (res.status === 'success') {
+                guruDataCache.master_jenis_penilaian = guruDataCache.master_jenis_penilaian.filter(j => j.kode_jenis !== kodeJenis);
+                const remainingNames = new Set(guruDataCache.master_jenis_penilaian.map(j => j.nama_jenis));
+                guruDataCache.jenis_list = Array.from(remainingNames);
+                refreshGuruUIWithoutServerReload();
+                Swal.fire({ icon: 'success', title: 'Terhapus!', text: res.message, timer: 1100, showConfirmButton: false });
+              } else {
+                Swal.fire('Gagal', res.message, 'error');
+              }
+            } catch (err) {
+              hideLoader();
+              Swal.fire('Server Error', err.message, 'error');
+            }
+          }
+        });
+      }
+
+      /**
+      * ============================================================================
+      * PORTAL ADMINISTRATOR (MANAJEMEN AKUN GURU, TABEL KELAS, & SISWA)
+      * ============================================================================
+      */
+      async function loadAdminDashboard() {
+        if (!currentUser || currentUser.role !== 'admin') return;
+
+        document.getElementById('adminHeaderNama').textContent = 'Welcome, ' + (currentUser.data.nama || 'Administrator');
+        document.getElementById('adminHeaderInfo').textContent =
+          `ID Admin: ${currentUser.data.id || 'ADM-01'} | Username: @${currentUser.data.username || 'admin'}`;
+
+        showLoader('Memuat seluruh data Guru, Mata Pelajaran, Kelas, & Siswa...');
+        try {
+          const res = await callServer('getDataAdminDashboard');
+          hideLoader();
+
+          if (res.status !== 'success') {
+            Swal.fire('Gagal Memuat Data', res.message, 'error');
+            return;
+          }
+
+          adminDataCache = {
+            guru: res.guru || [],
+            kelas: res.kelas || [],
+            siswa: res.siswa || [],
+            master_mapel: res.master_mapel || []
+          };
+          if (res.website_settings) {
+            applyWebsiteSettings(res.website_settings);
+          }
+          visiblePasswordsMap = {};
+
+          refreshAdminUI();
+          populatePengaturanWebsiteForm();
+        } catch (err) {
+          hideLoader();
+          Swal.fire('Server Error', err.message, 'error');
+        }
+      }
+
+      function refreshAdminUI() {
+        const totalGuru = adminDataCache.guru.length;
+        const totalMapel = (adminDataCache.master_mapel || []).length;
+        const totalSiswa = adminDataCache.siswa.length;
+        const totalKelas = adminDataCache.kelas.length;
+
+        document.getElementById('statAdminTotalGuru').textContent = totalGuru;
+        const statMapelEl = document.getElementById('statAdminTotalMapel');
+        if (statMapelEl) statMapelEl.textContent = totalMapel;
+        document.getElementById('statAdminTotalSiswa').textContent = totalSiswa;
+        document.getElementById('statAdminTotalKelas').textContent = totalKelas;
+
+        // Urutkan daftar kelas dari tabel DATA_KELAS
+        const sortedKelas = (adminDataCache.kelas || []).slice().sort((a, b) =>
+          String(a.nama_kelas).localeCompare(String(b.nama_kelas))
+        );
+        const kelasNames = sortedKelas.map(k => k.nama_kelas);
+
+        // 1. Populate Filter Kelas Siswa di Tab Siswa
+        const filterKelasEl = document.getElementById('filterAdminKelasSiswa');
+        const prevKelas = filterKelasEl.value || 'ALL';
+        filterKelasEl.innerHTML =
+          `<option value="ALL">Semua Rombel Kelas (${kelasNames.length})</option>` +
+          kelasNames.map(k => `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
+        filterKelasEl.value = kelasNames.includes(prevKelas) ? prevKelas : 'ALL';
+
+        // 2. Populate Combobox Rombel Kelas di Modal Tambah/Edit Siswa (Berelasi dengan Tabel Kelas!)
+        const selectSiswaKelasEl = document.getElementById('adminSiswaKelas');
+        if (selectSiswaKelasEl) {
+          const prevSiswaKls = selectSiswaKelasEl.value;
+          selectSiswaKelasEl.innerHTML = kelasNames.map(k =>
+            `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`
+          ).join('');
+          if (prevSiswaKls && kelasNames.includes(prevSiswaKls)) {
+            selectSiswaKelasEl.value = prevSiswaKls;
+          } else if (kelasNames.length > 0) {
+            selectSiswaKelasEl.value = kelasNames[0];
+          }
+        }
+
+        // 3. Populate Combobox Wali Kelas di Modal Tambah/Edit Kelas (Berelasi dengan Data Guru!)
+        const selectWaliEl = document.getElementById('adminKelasWali');
+        if (selectWaliEl) {
+          const prevWali = selectWaliEl.value || '-';
+          selectWaliEl.innerHTML =
+            `<option value="-">Belum Ditentukan</option>` +
+            (adminDataCache.guru || []).map(g =>
+              `<option value="${escapeHtml(g.nama_lengkap)}">${escapeHtml(g.nama_lengkap)}</option>`
+            ).join('');
+          selectWaliEl.value = prevWali;
+        }
+
+        // 4. Populate daftar subjek di Generator Mapel Guru ( Kelas 1 s/d 12 ) dari MASTER_MAPEL
+        const selectSubjekEl = document.getElementById('adminGuruPickSubjek');
+        if (selectSubjekEl) {
+          const defaultSubj = [
+            'Matematika', 'Bahasa Indonesia', 'Bahasa Inggris', 'IPAS / Sains',
+            'Ilmu Pengetahuan Alam (IPA)', 'Ilmu Pengetahuan Sosial (IPS)',
+            'Fisika', 'Kimia', 'Biologi', 'Informatika',
+            'PAI & Budi Pekerti', 'Pendidikan Pancasila', 'PJOK', 'Seni Budaya'
+          ];
+          const masterSubjSet = new Set();
+          (adminDataCache.master_mapel || []).forEach(m => {
+            if (m.nama_mapel) masterSubjSet.add(String(m.nama_mapel).trim());
+          });
+          const subjList = masterSubjSet.size > 0
+            ? Array.from(masterSubjSet).sort((a, b) => a.localeCompare(b))
+            : defaultSubj;
+          const prevSubj = selectSubjekEl.value || subjList[0];
+          selectSubjekEl.innerHTML = subjList.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+          selectSubjekEl.value = subjList.includes(prevSubj) ? prevSubj : subjList[0];
+        }
+
+        // 5. Populate Filter Kelompok Mapel di Tab Mata Pelajaran
+        const filterKelompokEl = document.getElementById('filterAdminMapelKelompok');
+        if (filterKelompokEl) {
+          const prevKel = filterKelompokEl.value || 'ALL';
+          const kelSet = new Set();
+          (adminDataCache.master_mapel || []).forEach(m => {
+            if (m.kelompok) kelSet.add(String(m.kelompok).trim());
+          });
+          const kelList = Array.from(kelSet).sort((a, b) => a.localeCompare(b));
+          filterKelompokEl.innerHTML =
+            `<option value="ALL">Semua Kelompok Mapel (${kelList.length})</option>` +
+            kelList.map(k => `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
+          filterKelompokEl.value = kelList.includes(prevKel) ? prevKel : 'ALL';
+        }
+
+        renderTabelAdminGuru();
+        renderDashAdminQuickGuruList();
+        renderTabelAdminMapel();
+        renderTabelAdminKelas();
+        renderTabelAdminSiswa();
+        syncAllModernComboboxes();
+      }
+
+      function renderDashAdminQuickGuruList() {
+        const container = document.getElementById('dashAdminQuickGuruListContainer');
+        if (!container) return;
+        const kw = (document.getElementById('dashAdminQuickSearchGuru')?.value || '').trim().toLowerCase();
+        const filtered = (adminDataCache.guru || []).filter(g => {
+          if (!kw) return true;
+          return (
+            String(g.nip_atau_id || '').toLowerCase().includes(kw) ||
+            String(g.nama_lengkap || '').toLowerCase().includes(kw) ||
+            String(g.mata_pelajaran || '').toLowerCase().includes(kw) ||
+            String(g.username || '').toLowerCase().includes(kw)
+          );
+        });
+
+        if (filtered.length === 0) {
+          container.innerHTML = `<div class="bento-dash-item-card text-center text-muted small py-3">Tidak ada data guru yang ditemukan.</div>`;
+          return;
+        }
+
+        container.innerHTML = filtered.map(g => {
+          const chips = String(g.mata_pelajaran || '')
+            .split(/[,;|]+/)
+            .map(m => m.trim())
+            .filter(Boolean)
+            .map(m => {
+              const match = m.match(/^(.*?)\s*\(Kelas\s+([^)]+)\)/i);
+              const label = match ? `${match[1].trim()} (${match[2].trim()})` : m;
+              return `<span class="bento-dash-chip">${escapeHtml(label)}</span>`;
+            }).join('');
+
+          return `
+            <div class="bento-dash-item-card">
+              <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                <div class="fw-bold text-dark text-truncate" style="font-size:0.96rem;">${escapeHtml(g.nama_lengkap)}</div>
+                <span class="bento-dash-switch" title="Akun Guru Aktif (${escapeHtml(g.nip_atau_id)})"
+                  onclick="openModalGuruAdmin('${escapeHtml(g.nip_atau_id)}')"></span>
+              </div>
+              <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+                <div class="d-flex flex-wrap gap-1">${chips || '<span class="bento-dash-chip">-</span>'}</div>
+                <div class="d-flex align-items-center gap-1 ms-auto">
+                  <button type="button" class="bento-dash-action-btn edit" title="Edit Guru"
+                    onclick="openModalGuruAdmin('${escapeHtml(g.nip_atau_id)}')">
+                    <i class="bi bi-pencil"></i>
+                  </button>
+                  <button type="button" class="bento-dash-action-btn delete" title="Hapus Guru"
+                    onclick="confirmHapusGuruAdmin('${escapeHtml(g.nip_atau_id)}', '${escapeHtml(g.nama_lengkap)}')">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </div>
+              </div>
+            </div>`;
+        }).join('');
+      }
+
+      function toggleTablePassword(uniqueKey) {
+        visiblePasswordsMap[uniqueKey] = !visiblePasswordsMap[uniqueKey];
+        if (uniqueKey.startsWith('guru_')) {
+          renderTabelAdminGuru();
+        } else {
+          renderTabelAdminSiswa();
+        }
+      }
+
+      /* -------------------- TAB 1 ADMIN: MANAJEMEN GURU -------------------- */
+      function renderTabelAdminGuru() {
+        const tbody = document.getElementById('tbodyAdminGuru');
+        const keyword = (document.getElementById('searchAdminGuru').value || '').trim().toLowerCase();
+
+        const filtered = adminDataCache.guru.filter(g => {
+          if (!keyword) return true;
+          return (
+            String(g.nip_atau_id).toLowerCase().includes(keyword) ||
+            String(g.nama_lengkap).toLowerCase().includes(keyword) ||
+            String(g.mata_pelajaran).toLowerCase().includes(keyword) ||
+            String(g.username).toLowerCase().includes(keyword)
+          );
+        });
+
+        if (filtered.length === 0) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="7" class="text-center text-muted py-4">Tidak ada data guru yang ditemukan.</td>
+            </tr>`;
+          return;
+        }
+
+        tbody.innerHTML = filtered.map((g, idx) => {
+          const passKey = 'guru_' + g.nip_atau_id;
+          const isShown = Boolean(visiblePasswordsMap[passKey]);
+          const maskedPass = '••••••••';
+
+          const mapelBadges = String(g.mata_pelajaran || '')
+            .split(/[,;|]+/)
+            .map(m => m.trim())
+            .filter(Boolean)
+            .map(m => {
+              const match = m.match(/^(.*?)\s*\(Kelas\s+([^)]+)\)/i);
+              if (match) {
+                const nm = match[1].trim();
+                const klsPart = match[2].trim();
+                const rombels = klsPart.split(/\s*\+\s*/).map(t => t.trim()).filter(Boolean);
+                const isRombelSpecific = rombels.length > 1 || !/^(?:[1-9]|1[0-2]|I|II|III|IV|V|VI|VII|VIII|IX|X|XI|XII)$/i.test(rombels[0] || '');
+                if (isRombelSpecific) {
+                  return `<span class="badge bg-primary-subtle text-primary border border-primary-subtle me-1 mb-1">
+                    ${escapeHtml(nm)} <span class="badge bg-primary text-white ms-1">${escapeHtml(rombels.join(', '))}</span>
+                  </span>`;
+                }
+              }
+              return `<span class="badge bg-primary-subtle text-primary me-1 mb-1">${escapeHtml(m)}</span>`;
+            })
+            .join('');
+
+          return `
+            <tr>
+              <td class="fw-semibold text-secondary">${idx + 1}</td>
+              <td class="font-monospace small fw-semibold">${escapeHtml(g.nip_atau_id)}</td>
+              <td class="fw-bold text-dark">${escapeHtml(g.nama_lengkap)}</td>
+              <td>${mapelBadges || '<span class="text-muted small">-</span>'}</td>
+              <td><span class="badge bg-light text-dark border font-monospace">${escapeHtml(g.username)}</span></td>
+              <td>
+                <div class="d-inline-flex align-items-center gap-2">
+                  <span class="font-monospace small ${isShown ? 'text-dark fw-semibold' : 'text-muted'}">
+                    ${isShown ? escapeHtml(g.password) : maskedPass}
+                  </span>
+                  <button type="button" class="btn btn-light btn-sm py-0 px-2 border" title="Lihat/Sembunyikan Password" onclick="toggleTablePassword('${escapeHtml(passKey)}')">
+                    <i class="bi ${isShown ? 'bi-eye-slash text-primary' : 'bi-eye text-secondary'}"></i>
+                  </button>
+                </div>
+              </td>
+              <td class="text-end">
+                <button class="btn btn-outline-primary btn-sm rounded-3 me-1" title="Edit Guru" onclick="openModalGuruAdmin('${escapeHtml(g.nip_atau_id)}')">
+                  <i class="bi bi-pencil"></i>
+                </button>
+                <button class="btn btn-outline-danger btn-sm rounded-3" title="Hapus Guru" onclick="confirmHapusGuruAdmin('${escapeHtml(g.nip_atau_id)}', '${escapeHtml(g.nama_lengkap)}')">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </td>
+            </tr>`;
+        }).join('');
+      }
+
+      let selectedGuruRombelsSet = new Set();
+
+      function getGuruPengampuLainForRombel(subjek, namaRombel, currentEditNip) {
+        const targetSubj = String(subjek || '').trim().toUpperCase();
+        const targetRombel = String(namaRombel || '').trim().toUpperCase();
+        const targetGrade = normalizeTingkatKelasClient(targetRombel);
+        if (!targetSubj || !targetRombel) return [];
+
+        const pengampu = [];
+        (adminDataCache.guru || []).forEach(g => {
+          if (currentEditNip && String(g.nip_atau_id).toLowerCase() === String(currentEditNip).toLowerCase()) return;
+          const list = String(g.mata_pelajaran || '').split(/[,;|]+/).map(m => m.trim()).filter(Boolean);
+          const hit = list.some(item => {
+            const match = item.match(/^(.*?)\s*\(Kelas\s+([^)]+)\)/i);
+            if (!match) return false;
+            const nm = match[1].trim().toUpperCase();
+            if (nm !== targetSubj) return false;
+            const klsRaw = match[2].trim();
+            const tokens = klsRaw.split(/\s*\+\s*/).map(t => t.trim().toUpperCase()).filter(Boolean);
+            if (tokens.length === 1 && /^(?:[1-9]|1[0-2]|I|II|III|IV|V|VI|VII|VIII|IX|X|XI|XII)$/i.test(tokens[0])) {
+              return normalizeTingkatKelasClient(tokens[0]) === targetGrade;
+            }
+            return tokens.includes(targetRombel);
+          });
+          if (hit) pengampu.push(g.nama_lengkap);
+        });
+        return pengampu;
+      }
+
+      function renderAdminGuruRombelPicker(keepSelection = false) {
+        const container = document.getElementById('adminGuruRombelList');
+        const filterWrap = document.getElementById('adminGuruRombelFilterWrap');
+        const quickActions = document.getElementById('adminGuruRombelQuickActions');
+        const hintEl = document.getElementById('adminGuruRombelHint');
+        if (!container) return;
+
+        const modeEl = document.querySelector('input[name="adminGuruTargetMode"]:checked');
+        const mode = modeEl ? modeEl.value : 'ROMBEL';
+        const subjek = (document.getElementById('adminGuruPickSubjek')?.value || '').trim();
+        const tingkat = normalizeTingkatKelasClient(document.getElementById('adminGuruPickTingkat')?.value) || '10';
+        const keyword = (document.getElementById('searchAdminGuruRombel')?.value || '').trim().toLowerCase();
+        const currentEditNip = document.getElementById('adminGuruIsEdit')?.value === 'true'
+          ? (document.getElementById('adminGuruOldNip')?.value || '').trim()
+          : '';
+
+        if (!keepSelection) {
+          selectedGuruRombelsSet.clear();
+        }
+
+        if (mode === 'TINGKAT') {
+          if (filterWrap) filterWrap.style.display = 'none';
+          if (quickActions) quickActions.style.display = 'none';
+          container.innerHTML = `
+            <div class="alert alert-secondary border-0 py-2 px-3 small mb-0 w-100">
+              <i class="bi bi-info-circle-fill me-1"></i>
+              Mode Umum: <strong>${escapeHtml(subjek || 'Mapel')} (Kelas ${escapeHtml(tingkat)})</strong> akan berlaku untuk <strong>seluruh rombel di Tingkat Kelas ${escapeHtml(tingkat)}</strong>.
+            </div>`;
+          if (hintEl) hintEl.textContent = 'Gunakan mode ini hanya jika 1 guru mengajar seluruh rombel di tingkat ini.';
+          return;
+        }
+
+        if (filterWrap) filterWrap.style.display = 'block';
+        if (quickActions) quickActions.style.display = 'flex';
+
+        const rombelsAtGrade = (adminDataCache.kelas || [])
+          .filter(k => normalizeTingkatKelasClient(k.tingkat_kelas || k.nama_kelas) === tingkat)
+          .sort((a, b) => String(a.nama_kelas).localeCompare(String(b.nama_kelas)));
+
+        if (rombelsAtGrade.length === 0) {
+          container.innerHTML = `
+            <div class="alert alert-warning border-0 py-2 px-3 small mb-0 w-100">
+              <i class="bi bi-exclamation-triangle-fill me-1"></i>
+              Belum ada rombel di <strong>Tingkat Kelas ${escapeHtml(tingkat)}</strong> pada Tabel Data Kelas.
+              Tambahkan rombel terlebih dahulu (misal: <code>${escapeHtml(tingkat)}-A</code> atau <code>${escapeHtml(tingkat)}-PPLG-1</code>) atau pilih mode <em>Semua Rombel di Tingkat Ini</em>.
+            </div>`;
+          if (hintEl) hintEl.textContent = 'Tidak ada rombel terdaftar untuk tingkat ini.';
+          return;
+        }
+
+        const filteredRombels = rombelsAtGrade.filter(k =>
+          !keyword || String(k.nama_kelas).toLowerCase().includes(keyword)
+        );
+
+        if (filteredRombels.length === 0) {
+          container.innerHTML = `<div class="text-muted small py-2">Tidak ada rombel tingkat ${escapeHtml(tingkat)} yang cocok dengan "${escapeHtml(keyword)}".</div>`;
+          return;
+        }
+
+        container.innerHTML = filteredRombels.map(k => {
+          const kName = String(k.nama_kelas).trim().toUpperCase();
+          const isChecked = selectedGuruRombelsSet.has(kName);
+          const pengampuLain = getGuruPengampuLainForRombel(subjek, kName, currentEditNip);
+          const conflictBadge = pengampuLain.length > 0
+            ? `<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1" style="font-size: 0.65rem;" title="Sudah diampu oleh: ${escapeHtml(pengampuLain.join(', '))}">Diampu: ${escapeHtml(pengampuLain[0].split(',')[0])}</span>`
+            : '';
+
+          return `
+            <label class="d-inline-flex align-items-center gap-1 px-2 py-1 rounded-3 border ${isChecked ? 'bg-primary-subtle border-primary text-primary fw-semibold' : 'bg-light text-dark'}" style="cursor: pointer; font-size: 0.78rem; user-select: none;">
+              <input type="checkbox" class="form-check-input m-0 admin-guru-rombel-cb" value="${escapeHtml(kName)}" ${isChecked ? 'checked' : ''} onchange="onToggleGuruRombelCheckbox(this)">
+              <span>${escapeHtml(kName)}</span>${conflictBadge}
+            </label>`;
+        }).join('');
+
+        if (hintEl) {
+          const cnt = selectedGuruRombelsSet.size;
+          hintEl.innerHTML = cnt > 0
+            ? `<strong class="text-primary">${cnt} rombel dipilih:</strong> ${escapeHtml(Array.from(selectedGuruRombelsSet).join(', '))}`
+            : 'Centang rombel yang diampu guru ini (misal hanya 3 kelas atau khusus jurusan PPLG).';
+        }
+      }
+
+      function onToggleGuruRombelCheckbox(cb) {
+        const val = String(cb.value || '').trim().toUpperCase();
+        if (!val) return;
+        if (cb.checked) selectedGuruRombelsSet.add(val);
+        else selectedGuruRombelsSet.delete(val);
+        renderAdminGuruRombelPicker(true);
+      }
+
+      function toggleAllGuruRombelCheckboxes(checked) {
+        document.querySelectorAll('.admin-guru-rombel-cb').forEach(cb => {
+          const val = String(cb.value || '').trim().toUpperCase();
+          if (checked) selectedGuruRombelsSet.add(val);
+          else selectedGuruRombelsSet.delete(val);
+        });
+        renderAdminGuruRombelPicker(true);
+      }
+
+      function renderAdminGuruMapelChips() {
+        const wrap = document.getElementById('adminGuruMapelChips');
+        const inputEl = document.getElementById('adminGuruMapel');
+        if (!wrap || !inputEl) return;
+
+        const list = String(inputEl.value || '')
+          .split(/[,;|]+/)
+          .map(m => m.trim())
+          .filter(Boolean);
+
+        if (list.length === 0) {
+          wrap.innerHTML = '';
+          return;
+        }
+
+        wrap.innerHTML = list.map((item, idx) => `
+          <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-1 d-inline-flex align-items-center gap-1" style="font-size: 0.75rem;">
+            <span>${escapeHtml(item)}</span>
+            <button type="button" class="btn-close" style="font-size: 0.55rem;" aria-label="Hapus" onclick="removeGuruMapelChip(${idx})"></button>
+          </span>
+        `).join('');
+      }
+
+      function removeGuruMapelChip(index) {
+        const inputEl = document.getElementById('adminGuruMapel');
+        if (!inputEl) return;
+        const list = String(inputEl.value || '')
+          .split(/[,;|]+/)
+          .map(m => m.trim())
+          .filter(Boolean);
+        list.splice(index, 1);
+        inputEl.value = list.join(', ');
+        renderAdminGuruMapelChips();
+      }
+
+      function handleAddGuruMapelBuilder() {
+        const subjekEl = document.getElementById('adminGuruPickSubjek');
+        const tingkatEl = document.getElementById('adminGuruPickTingkat');
+        if (!subjekEl || !tingkatEl) return;
+
+        const subjek = (subjekEl.value || '').trim();
+        const tingkat = normalizeTingkatKelasClient(tingkatEl.value) || '10';
+        if (!subjek) return;
+
+        const modeEl = document.querySelector('input[name="adminGuruTargetMode"]:checked');
+        const mode = modeEl ? modeEl.value : 'ROMBEL';
+
+        let formatted = `${subjek} (Kelas ${tingkat})`;
+        if (mode === 'ROMBEL') {
+          const picked = Array.from(selectedGuruRombelsSet).sort((a, b) => a.localeCompare(b));
+          if (picked.length === 0) {
+            Swal.fire({
+              icon: 'info',
+              title: 'Pilih Rombel Terlebih Dahulu',
+              text: 'Centang minimal 1 rombel kelas yang diampu guru ini, atau pilih mode "Semua Rombel di Tingkat Ini".'
+            });
+            return;
+          }
+          formatted = `${subjek} (Kelas ${picked.join(' + ')})`;
+        }
+
+        const inputMapel = document.getElementById('adminGuruMapel');
+        const existingList = String(inputMapel.value || '')
+          .split(/[,;|]+/)
+          .map(m => m.trim())
+          .filter(Boolean);
+
+        if (!existingList.some(m => m.toUpperCase() === formatted.toUpperCase())) {
+          existingList.push(formatted);
+          inputMapel.value = existingList.join(', ');
+        }
+
+        selectedGuruRombelsSet.clear();
+        renderAdminGuruMapelChips();
+        renderAdminGuruRombelPicker(false);
+      }
+
+      function openModalGuruAdmin(nipEdit = null) {
+        const form = document.getElementById('formGuruAdmin');
+        form.reset();
+        selectedGuruRombelsSet.clear();
+
+        const searchRombelEl = document.getElementById('searchAdminGuruRombel');
+        if (searchRombelEl) searchRombelEl.value = '';
+        const radioRombel = document.getElementById('modeTargetRombelSpesifik');
+        if (radioRombel) radioRombel.checked = true;
+
+        const passInput = document.getElementById('adminGuruPassword');
+        const passIcon = document.getElementById('iconAdminGuruPass');
+        passInput.type = 'password';
+        passIcon.className = 'bi bi-eye';
+
+        if (nipEdit) {
+          const found = adminDataCache.guru.find(g => String(g.nip_atau_id) === String(nipEdit));
+          if (!found) return;
+
+          document.getElementById('modalGuruAdminTitle').innerHTML =
+            `<i class="bi bi-pencil-square text-primary me-2"></i>Edit Data Guru`;
+          document.getElementById('adminGuruIsEdit').value = 'true';
+          document.getElementById('adminGuruOldNip').value = found.nip_atau_id;
+          document.getElementById('adminGuruNip').value = found.nip_atau_id;
+          document.getElementById('adminGuruNama').value = found.nama_lengkap;
+          document.getElementById('adminGuruMapel').value = found.mata_pelajaran;
+          document.getElementById('adminGuruUsername').value = found.username;
+          document.getElementById('adminGuruPassword').value = found.password;
+        } else {
+          document.getElementById('modalGuruAdminTitle').innerHTML =
+            `<i class="bi bi-person-plus-fill text-primary me-2"></i>Tambah Guru Baru`;
+          document.getElementById('adminGuruIsEdit').value = 'false';
+          document.getElementById('adminGuruOldNip').value = '';
+        }
+
+        syncAllModernComboboxes();
+        renderAdminGuruMapelChips();
+        renderAdminGuruRombelPicker(false);
+        modalGuruAdminInstance.show();
+      }
+
+      async function handleSimpanGuruAdmin(e) {
+        e.preventDefault();
+        const isEdit = document.getElementById('adminGuruIsEdit').value === 'true';
+        const oldNip = document.getElementById('adminGuruOldNip').value.trim();
+        const nip = document.getElementById('adminGuruNip').value.trim();
+        const nama = document.getElementById('adminGuruNama').value.trim();
+        const mapel = document.getElementById('adminGuruMapel').value.trim();
+        const username = document.getElementById('adminGuruUsername').value.trim() || nip;
+        const password = document.getElementById('adminGuruPassword').value.trim() || nip;
+
+        showLoader(isEdit ? 'Memperbarui data guru...' : 'Menyimpan guru baru...');
+        try {
+          const res = await callServer('simpanDataGuru', {
+            is_edit: isEdit,
+            old_nip_atau_id: oldNip,
+            nip_atau_id: nip,
+            nama_lengkap: nama,
+            mata_pelajaran: mapel,
+            username: username,
+            password: password
+          });
+          hideLoader();
+
+          if (res.status !== 'success') {
+            Swal.fire('Gagal Menyimpan', res.message, 'error');
+            return;
+          }
+
+          if (isEdit) {
+            const idx = adminDataCache.guru.findIndex(g => String(g.nip_atau_id) === String(oldNip));
+            if (idx !== -1 && res.guru) adminDataCache.guru[idx] = res.guru;
+          } else if (res.guru) {
+            adminDataCache.guru.push(res.guru);
+          }
+          if (Array.isArray(res.master_mapel)) {
+            adminDataCache.master_mapel = res.master_mapel;
+          }
+
+          modalGuruAdminInstance.hide();
+          refreshAdminUI();
+          Swal.fire({ icon: 'success', title: 'Berhasil!', text: res.message, timer: 1400, showConfirmButton: false });
+        } catch (err) {
+          hideLoader();
+          Swal.fire('Server Error', err.message, 'error');
+        }
+      }
+
+      function confirmHapusGuruAdmin(nip, nama) {
+        Swal.fire({
+          title: 'Hapus Akun Guru?',
+          html: `Apakah Anda yakin ingin menghapus data guru <strong>${escapeHtml(nama)}</strong> (NIP/ID: <code>${escapeHtml(nip)}</code>)?`,
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonColor: '#ef4444',
+          cancelButtonColor: '#64748b',
+          confirmButtonText: 'Ya, Hapus!',
+          cancelButtonText: 'Batal'
+        }).then(async result => {
+          if (result.isConfirmed) {
+            showLoader('Menghapus data guru...');
+            try {
+              const res = await callServer('hapusDataGuru', nip);
+              hideLoader();
+
+              if (res.status === 'success') {
+                adminDataCache.guru = adminDataCache.guru.filter(g => String(g.nip_atau_id) !== String(nip));
+                refreshAdminUI();
+                Swal.fire({ icon: 'success', title: 'Terhapus!', text: res.message, timer: 1300, showConfirmButton: false });
+              } else {
+                Swal.fire('Gagal Menghapus', res.message, 'error');
+              }
+            } catch (err) {
+              hideLoader();
+              Swal.fire('Server Error', err.message, 'error');
+            }
+          }
+        });
+      }
+
+      /* -------------------- TAB 1B ADMIN: MANAJEMEN MASTER MATA PELAJARAN (CRUD MASTER_MAPEL) -------------------- */
+      function isMapelMatchedForGuruClient(labelMapel, guruMapelRaw) {
+        const target = String(labelMapel || '').trim().toUpperCase();
+        if (!target) return false;
+        const targetMatch = target.match(/^(.*?)\s*\(KELAS\s+([^)]+)\)/i);
+        const targetNama = targetMatch ? targetMatch[1].trim() : target;
+        const targetFirstToken = targetMatch ? targetMatch[2].split(/\s*\+\s*/)[0].trim() : '';
+        const targetGrade = targetFirstToken ? normalizeTingkatKelasClient(targetFirstToken) : '';
+
+        const list = String(guruMapelRaw || '').split(/[,;|]+/).map(m => m.trim()).filter(Boolean);
+        return list.some(item => {
+          const up = item.toUpperCase();
+          if (up === target) return true;
+          const m = up.match(/^(.*?)\s*\(KELAS\s+([^)]+)\)/i);
+          const itemNama = m ? m[1].trim() : up;
+          const itemFirstToken = m ? m[2].split(/\s*\+\s*/)[0].trim() : '';
+          const itemGrade = itemFirstToken ? normalizeTingkatKelasClient(itemFirstToken) : '';
+          return Boolean(targetNama && itemNama === targetNama && targetGrade && itemGrade === targetGrade);
+        });
+      }
+
+      function renderTabelAdminMapel() {
+        const tbody = document.getElementById('tbodyAdminMapel');
+        if (!tbody) return;
+
+        const rawFilterTingkat = (document.getElementById('filterAdminMapelTingkat').value || 'ALL').toUpperCase();
+        const filterTingkat = rawFilterTingkat === 'ALL' ? 'ALL' : normalizeTingkatKelasClient(rawFilterTingkat);
+        const filterKelompok = (document.getElementById('filterAdminMapelKelompok').value || 'ALL').trim();
+        const keyword = (document.getElementById('searchAdminMapel').value || '').trim().toLowerCase();
+
+        const filtered = (adminDataCache.master_mapel || []).filter(m => {
+          const mTingkat = normalizeTingkatKelasClient(m.kelas || m.label_mapel_kelas);
+          const matchTingkat = filterTingkat === 'ALL' || mTingkat === filterTingkat;
+          const matchKelompok = filterKelompok === 'ALL' || String(m.kelompok || '').trim().toLowerCase() === filterKelompok.toLowerCase();
+          const matchKeyword =
+            !keyword ||
+            String(m.kode_mapel || '').toLowerCase().includes(keyword) ||
+            String(m.nama_mapel || '').toLowerCase().includes(keyword) ||
+            String(m.label_mapel_kelas || '').toLowerCase().includes(keyword) ||
+            (`kelas ${mTingkat}`).includes(keyword) ||
+            String(m.kelompok || '').toLowerCase().includes(keyword);
+          return matchTingkat && matchKelompok && matchKeyword;
+        });
+
+        if (filtered.length === 0) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="7" class="text-center text-muted py-4">Tidak ada data mata pelajaran yang sesuai dengan filter.</td>
+            </tr>`;
+          return;
+        }
+
+        tbody.innerHTML = filtered.map((m, idx) => {
+          const normTingkat = normalizeTingkatKelasClient(m.kelas || m.label_mapel_kelas) || '10';
+          const numTingkat = parseInt(normTingkat, 10) || 10;
+          const badgeTingkatCls = numTingkat <= 6
+            ? 'bg-info-subtle text-info-emphasis'
+            : (numTingkat <= 9 ? 'bg-primary-subtle text-primary' : 'bg-success-subtle text-success');
+          const labelLengkap = m.label_mapel_kelas || `${m.nama_mapel} (Kelas ${normTingkat})`;
+          const jumlahGuru = (adminDataCache.guru || []).filter(g =>
+            isMapelMatchedForGuruClient(labelLengkap, g.mata_pelajaran)
+          ).length;
+          const vis = getSubjectVisualByText(m.nama_mapel);
+
+          return `
+            <tr>
+              <td class="fw-semibold text-secondary">${idx + 1}</td>
+              <td class="font-monospace small fw-bold text-secondary">${escapeHtml(m.kode_mapel)}</td>
+              <td>
+                <div class="d-flex align-items-center gap-2">
+                  <span class="cbox-option-icon cbox-theme-${vis.theme}" style="width:32px;height:32px;min-width:32px;font-size:0.88rem;">
+                    <i class="bi ${vis.icon}"></i>
+                  </span>
+                  <div>
+                    <div class="fw-bold text-dark">${escapeHtml(m.nama_mapel)}</div>
+                    <div class="text-muted" style="font-size: 0.72rem;">${escapeHtml(labelLengkap)}</div>
+                  </div>
+                </div>
+              </td>
+              <td class="text-center">
+                <span class="badge ${badgeTingkatCls} px-3 py-1 rounded-pill fw-semibold">Kelas ${escapeHtml(normTingkat)}</span>
+              </td>
+              <td>
+                <span class="badge bg-light text-dark border px-2 py-1 rounded-pill">${escapeHtml(m.kelompok || 'Umum / Wajib')}</span>
+              </td>
+              <td class="text-center">
+                <button type="button" class="btn btn-sm ${jumlahGuru > 0 ? 'btn-outline-primary' : 'btn-light text-muted'} rounded-pill px-3 fw-semibold" onclick="filterGuruByMapelFromRelasi('${escapeHtml(m.nama_mapel)}')" title="Lihat guru yang mengampu mapel ini">
+                  <i class="bi bi-person-workspace me-1"></i>${jumlahGuru} Guru
+                </button>
+              </td>
+              <td class="text-end">
+                <button class="btn btn-outline-primary btn-sm rounded-3 me-1" title="Edit Mapel" onclick="openModalMapelAdmin('${escapeHtml(m.kode_mapel)}')">
+                  <i class="bi bi-pencil"></i>
+                </button>
+                <button class="btn btn-outline-danger btn-sm rounded-3" title="Hapus Mapel" onclick="confirmHapusMapelAdmin('${escapeHtml(m.kode_mapel)}', '${escapeHtml(labelLengkap)}')">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </td>
+            </tr>`;
+        }).join('');
+      }
+
+      function filterGuruByMapelFromRelasi(namaMapel) {
+        const searchGuruEl = document.getElementById('searchAdminGuru');
+        if (searchGuruEl) {
+          searchGuruEl.value = '';
+          renderTabelAdminGuru();
+        }
+        setTableSearchQuery('tbodyAdminGuru', namaMapel);
+        const tabGuruBtn = document.getElementById('tab-admin-guru-btn');
+        if (tabGuruBtn) {
+          const tabTrigger = new bootstrap.Tab(tabGuruBtn);
+          tabTrigger.show();
+        }
+      }
+
+      function generateKodeMapelOtomatis(namaMapel, tingkat) {
+        const cleanNama = String(namaMapel || '').trim();
+        const normTingkat = normalizeTingkatKelasClient(tingkat) || '10';
+        const abbr = cleanNama.replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase() || 'MPL';
+        const baseKode = `MP-${normTingkat}-${abbr}`;
+        const existingKodes = new Set((adminDataCache.master_mapel || []).map(m => String(m.kode_mapel || '').toUpperCase()));
+        if (!existingKodes.has(baseKode)) return baseKode;
+        let suffix = 2;
+        while (existingKodes.has(`${baseKode}-${suffix}`)) suffix++;
+        return `${baseKode}-${suffix}`;
+      }
+
+      function updatePreviewLabelMapel(autoUpdateKode = false) {
+        const nama = (document.getElementById('adminMapelNama').value || '').trim();
+        const tingkat = normalizeTingkatKelasClient(document.getElementById('adminMapelTingkat').value) || '10';
+        const previewEl = document.getElementById('previewLabelMapelAdmin');
+        if (previewEl) {
+          previewEl.textContent = nama ? `${nama} (Kelas ${tingkat})` : `- (Kelas ${tingkat})`;
+        }
+        const isEdit = document.getElementById('adminMapelIsEdit').value === 'true';
+        if (autoUpdateKode && !isEdit && nama) {
+          document.getElementById('adminMapelKode').value = generateKodeMapelOtomatis(nama, tingkat);
+        }
+      }
+
+      function openModalMapelAdmin(kodeEdit = null) {
+        const form = document.getElementById('formMapelAdmin');
+        form.reset();
+
+        if (kodeEdit) {
+          const found = (adminDataCache.master_mapel || []).find(
+            m => String(m.kode_mapel).toLowerCase() === String(kodeEdit).toLowerCase()
+          );
+          if (!found) return;
+
+          const normTingkat = normalizeTingkatKelasClient(found.kelas || found.label_mapel_kelas) || '10';
+          document.getElementById('modalMapelAdminTitle').innerHTML =
+            `<i class="bi bi-pencil-square text-primary me-2"></i>Edit Mata Pelajaran`;
+          document.getElementById('adminMapelIsEdit').value = 'true';
+          document.getElementById('adminMapelOldKode').value = found.kode_mapel;
+          document.getElementById('adminMapelKode').value = found.kode_mapel;
+          document.getElementById('adminMapelNama').value = found.nama_mapel;
+          document.getElementById('adminMapelTingkat').value = normTingkat;
+
+          const kelEl = document.getElementById('adminMapelKelompok');
+          const kelVal = found.kelompok || 'Umum / Wajib';
+          const existsKel = Array.from(kelEl.options).some(o => o.value === kelVal);
+          if (!existsKel) {
+            kelEl.innerHTML += `<option value="${escapeHtml(kelVal)}">${escapeHtml(kelVal)}</option>`;
+          }
+          kelEl.value = kelVal;
+          updatePreviewLabelMapel(false);
+        } else {
+          document.getElementById('modalMapelAdminTitle').innerHTML =
+            `<i class="bi bi-journal-plus text-primary me-2"></i>Tambah Mata Pelajaran Baru`;
+          document.getElementById('adminMapelIsEdit').value = 'false';
+          document.getElementById('adminMapelOldKode').value = '';
+
+          const activeTingkat = document.getElementById('filterAdminMapelTingkat').value;
+          const defaultTingkat = (activeTingkat && activeTingkat !== 'ALL') ? normalizeTingkatKelasClient(activeTingkat) : '10';
+          document.getElementById('adminMapelTingkat').value = defaultTingkat;
+          document.getElementById('adminMapelKode').value = generateKodeMapelOtomatis('', defaultTingkat);
+          document.getElementById('adminMapelKelompok').value = 'Umum / Wajib';
+          updatePreviewLabelMapel(false);
+        }
+
+        syncAllModernComboboxes();
+        modalMapelAdminInstance.show();
+      }
+
+      async function handleSimpanMapelAdmin(e) {
+        e.preventDefault();
+        const isEdit = document.getElementById('adminMapelIsEdit').value === 'true';
+        const oldKode = document.getElementById('adminMapelOldKode').value.trim();
+        const kodeMapel = document.getElementById('adminMapelKode').value.trim().toUpperCase();
+        const namaMapel = document.getElementById('adminMapelNama').value.trim();
+        const kelas = normalizeTingkatKelasClient(document.getElementById('adminMapelTingkat').value) || '10';
+        const kelompok = document.getElementById('adminMapelKelompok').value.trim() || 'Umum / Wajib';
+
+        showLoader(isEdit ? 'Memperbarui mata pelajaran & relasi...' : 'Menyimpan mata pelajaran baru...');
+        try {
+          const res = await callServer('simpanDataMapel', {
+            is_edit: isEdit,
+            old_kode_mapel: oldKode,
+            kode_mapel: kodeMapel,
+            nama_mapel: namaMapel,
+            kelas: kelas,
+            kelompok: kelompok
+          });
+          hideLoader();
+
+          if (res.status !== 'success') {
+            Swal.fire('Gagal Menyimpan Mapel', res.message, 'error');
+            return;
+          }
+
+          if (isEdit) {
+            const idx = (adminDataCache.master_mapel || []).findIndex(
+              m => String(m.kode_mapel).toLowerCase() === String(oldKode).toLowerCase()
+            );
+            if (idx !== -1 && res.mapel) {
+              adminDataCache.master_mapel[idx] = res.mapel;
+            }
+            if (Array.isArray(res.guru)) {
+              adminDataCache.guru = res.guru;
+            }
+          } else if (res.mapel) {
+            adminDataCache.master_mapel.push(res.mapel);
+          }
+
+          modalMapelAdminInstance.hide();
+          refreshAdminUI();
+          Swal.fire({ icon: 'success', title: 'Berhasil!', text: res.message, timer: 1500, showConfirmButton: false });
+        } catch (err) {
+          hideLoader();
+          Swal.fire('Server Error', err.message, 'error');
+        }
+      }
+
+      function confirmHapusMapelAdmin(kodeMapel, labelMapel) {
+        const guruTerkait = (adminDataCache.guru || []).filter(g =>
+          isMapelMatchedForGuruClient(labelMapel, g.mata_pelajaran)
+        );
+        if (guruTerkait.length > 0) {
+          Swal.fire({
+            icon: 'warning',
+            title: 'Mapel Masih Diampu Guru!',
+            html: `Mata Pelajaran <strong>${escapeHtml(labelMapel)}</strong> masih diampu oleh <strong>${guruTerkait.length} guru aktif</strong>.<br><br>Silakan ubah atau hapus mapel tersebut dari data guru terkait terlebih dahulu.`
+          });
+          return;
+        }
+
+        Swal.fire({
+          title: 'Hapus Mata Pelajaran?',
+          html: `Apakah Anda yakin ingin menghapus mata pelajaran <strong>${escapeHtml(labelMapel)}</strong> (Kode: <code>${escapeHtml(kodeMapel)}</code>) dari <code>MASTER_MAPEL</code>?`,
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonColor: '#ef4444',
+          cancelButtonColor: '#64748b',
+          confirmButtonText: 'Ya, Hapus Mapel!',
+          cancelButtonText: 'Batal'
+        }).then(async result => {
+          if (result.isConfirmed) {
+            showLoader('Menghapus data mata pelajaran...');
+            try {
+              const res = await callServer('hapusDataMapel', kodeMapel);
+              hideLoader();
+
+              if (res.status === 'success') {
+                adminDataCache.master_mapel = (adminDataCache.master_mapel || []).filter(
+                  m => String(m.kode_mapel).toLowerCase() !== String(kodeMapel).toLowerCase()
+                );
+                refreshAdminUI();
+                Swal.fire({ icon: 'success', title: 'Terhapus!', text: res.message, timer: 1300, showConfirmButton: false });
+              } else {
+                Swal.fire('Gagal Menghapus', res.message, 'error');
+              }
+            } catch (err) {
+              hideLoader();
+              Swal.fire('Server Error', err.message, 'error');
+            }
+          }
+        });
+      }
+
+      function switchFromGuruToTambahMapelModal() {
+        modalGuruAdminInstance.hide();
+        setTimeout(() => {
+          openModalMapelAdmin();
+        }, 220);
+      }
+
+      /* -------------------- TAB 2 ADMIN: MANAJEMEN DATA KELAS (KELAS 1 S/D KELAS 12) -------------------- */
+      function renderTabelAdminKelas() {
+        const tbody = document.getElementById('tbodyAdminKelas');
+        if (!tbody) return;
+
+        const rawFilterTingkat = (document.getElementById('filterAdminTingkatKelas').value || 'ALL').toUpperCase();
+        const filterTingkat = rawFilterTingkat === 'ALL' ? 'ALL' : normalizeTingkatKelasClient(rawFilterTingkat);
+        const keyword = (document.getElementById('searchAdminKelas').value || '').trim().toLowerCase();
+
+        const filtered = (adminDataCache.kelas || []).filter(k => {
+          const kTingkat = normalizeTingkatKelasClient(k.tingkat_kelas || k.nama_kelas);
+          const matchTingkat = filterTingkat === 'ALL' || kTingkat === filterTingkat;
+          const matchKeyword =
+            !keyword ||
+            String(k.kode_kelas).toLowerCase().includes(keyword) ||
+            String(k.nama_kelas).toLowerCase().includes(keyword) ||
+            (`kelas ${kTingkat}`).includes(keyword) ||
+            String(k.wali_kelas).toLowerCase().includes(keyword);
+          return matchTingkat && matchKeyword;
+        });
+
+        if (filtered.length === 0) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="7" class="text-center text-muted py-4">Tidak ada data kelas yang sesuai dengan filter.</td>
+            </tr>`;
+          return;
+        }
+
+        tbody.innerHTML = filtered.map((k, idx) => {
+          const jumlahSiswa = (adminDataCache.siswa || []).filter(
+            s => String(s.kelas).trim().toUpperCase() === String(k.nama_kelas).trim().toUpperCase()
+          ).length;
+
+          const normTingkat = normalizeTingkatKelasClient(k.tingkat_kelas || k.nama_kelas) || '1';
+          const numTingkat = parseInt(normTingkat, 10) || 10;
+          const badgeTingkatCls = numTingkat <= 6
+            ? 'bg-info-subtle text-info-emphasis'
+            : (numTingkat <= 9 ? 'bg-primary-subtle text-primary' : 'bg-success-subtle text-success');
+
+          return `
+            <tr>
+              <td class="fw-semibold text-secondary">${idx + 1}</td>
+              <td class="font-monospace small fw-bold text-secondary">${escapeHtml(k.kode_kelas)}</td>
+              <td>
+                <span class="badge bg-dark fs-6 px-3 py-1 rounded-3">${escapeHtml(k.nama_kelas)}</span>
+              </td>
+              <td class="text-center">
+                <span class="badge ${badgeTingkatCls} px-3 py-1 rounded-pill fw-semibold">Kelas ${escapeHtml(normTingkat)}</span>
+              </td>
+              <td class="small text-secondary">
+                <i class="bi bi-person-badge me-1 text-primary"></i>${escapeHtml(k.wali_kelas || '-')}
+              </td>
+              <td class="text-center">
+                <button type="button" class="btn btn-sm ${jumlahSiswa > 0 ? 'btn-outline-primary' : 'btn-light text-muted'} rounded-pill px-3 fw-semibold" onclick="filterSiswaByKelasFromRelasi('${escapeHtml(k.nama_kelas)}')" title="Lihat daftar siswa di kelas ini">
+                  <i class="bi bi-people-fill me-1"></i>${jumlahSiswa} Siswa
+                </button>
+              </td>
+              <td class="text-end">
+                <button class="btn btn-outline-primary btn-sm rounded-3 me-1" title="Edit Kelas" onclick="openModalKelasAdmin('${escapeHtml(k.kode_kelas)}')">
+                  <i class="bi bi-pencil"></i>
+                </button>
+                <button class="btn btn-outline-danger btn-sm rounded-3" title="Hapus Kelas" onclick="confirmHapusKelasAdmin('${escapeHtml(k.kode_kelas)}', '${escapeHtml(k.nama_kelas)}')">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </td>
+            </tr>`;
+        }).join('');
+      }
+
+      function filterSiswaByKelasFromRelasi(namaKelas) {
+        const filterEl = document.getElementById('filterAdminKelasSiswa');
+        if (filterEl) {
+          filterEl.value = namaKelas;
+          renderTabelAdminSiswa();
+          syncAllModernComboboxes();
+        }
+        const tabSiswaBtn = document.getElementById('tab-admin-siswa-btn');
+        if (tabSiswaBtn) {
+          const tabTrigger = new bootstrap.Tab(tabSiswaBtn);
+          tabTrigger.show();
+        }
+      }
+
+      function onAdminKelasTingkatChange() {
+        const tingkat = document.getElementById('adminKelasTingkat').value || '1';
+        const inputNama = document.getElementById('adminKelasNama');
+        if (inputNama) {
+          inputNama.placeholder = `Contoh: ${tingkat}-A / ${tingkat}-B`;
+        }
+      }
+
+      function openModalKelasAdmin(kodeEdit = null) {
+        const form = document.getElementById('formKelasAdmin');
+        form.reset();
+
+        if (kodeEdit) {
+          const found = (adminDataCache.kelas || []).find(
+            k => String(k.kode_kelas).toLowerCase() === String(kodeEdit).toLowerCase()
+          );
+          if (!found) return;
+
+          const normTingkat = normalizeTingkatKelasClient(found.tingkat_kelas || found.nama_kelas) || '1';
+
+          document.getElementById('modalKelasAdminTitle').innerHTML =
+            `<i class="bi bi-pencil-square text-primary me-2"></i>Edit Data Rombel Kelas`;
+          document.getElementById('adminKelasIsEdit').value = 'true';
+          document.getElementById('adminKelasOldKode').value = found.kode_kelas;
+          document.getElementById('adminKelasKode').value = found.kode_kelas;
+          document.getElementById('adminKelasNama').value = found.nama_kelas;
+          document.getElementById('adminKelasTingkat').value = normTingkat;
+          onAdminKelasTingkatChange();
+
+          const waliEl = document.getElementById('adminKelasWali');
+          const existsWali = Array.from(waliEl.options).some(o => o.value === found.wali_kelas);
+          if (!existsWali && found.wali_kelas && found.wali_kelas !== '-') {
+            waliEl.innerHTML += `<option value="${escapeHtml(found.wali_kelas)}">${escapeHtml(found.wali_kelas)}</option>`;
+          }
+          waliEl.value = found.wali_kelas || '-';
+        } else {
+          document.getElementById('modalKelasAdminTitle').innerHTML =
+            `<i class="bi bi-building-add text-primary me-2"></i>Tambah Rombel Kelas Baru`;
+          document.getElementById('adminKelasIsEdit').value = 'false';
+          document.getElementById('adminKelasOldKode').value = '';
+
+          let maxNum = (adminDataCache.kelas || []).length;
+          (adminDataCache.kelas || []).forEach(k => {
+            const m = String(k.kode_kelas || '').match(/^KLS-(\d+)/i);
+            if (m) {
+              const n = parseInt(m[1], 10);
+              if (n > maxNum) maxNum = n;
+            }
+          });
+          document.getElementById('adminKelasKode').value = 'KLS-' + String(maxNum + 1).padStart(2, '0');
+
+          const activeTingkat = document.getElementById('filterAdminTingkatKelas').value;
+          document.getElementById('adminKelasTingkat').value =
+            (activeTingkat && activeTingkat !== 'ALL') ? normalizeTingkatKelasClient(activeTingkat) : '1';
+          onAdminKelasTingkatChange();
+          document.getElementById('adminKelasWali').value = '-';
+        }
+
+        syncAllModernComboboxes();
+        modalKelasAdminInstance.show();
+      }
+
+      async function handleSimpanKelasAdmin(e) {
+        e.preventDefault();
+        const isEdit = document.getElementById('adminKelasIsEdit').value === 'true';
+        const oldKode = document.getElementById('adminKelasOldKode').value.trim();
+        const kodeKelas = document.getElementById('adminKelasKode').value.trim().toUpperCase();
+        const namaKelas = document.getElementById('adminKelasNama').value.trim().toUpperCase();
+        const tingkatKelas = normalizeTingkatKelasClient(document.getElementById('adminKelasTingkat').value) || '1';
+        const waliKelas = document.getElementById('adminKelasWali').value.trim() || '-';
+
+        showLoader(isEdit ? 'Memperbarui data kelas & relasi siswa...' : 'Menyimpan kelas baru...');
+        try {
+          const res = await callServer('simpanDataKelas', {
+            is_edit: isEdit,
+            old_kode_kelas: oldKode,
+            kode_kelas: kodeKelas,
+            nama_kelas: namaKelas,
+            tingkat_kelas: tingkatKelas,
+            wali_kelas: waliKelas
+          });
+          hideLoader();
+
+          if (res.status !== 'success') {
+            Swal.fire('Gagal Menyimpan Kelas', res.message, 'error');
+            return;
+          }
+
+          if (isEdit) {
+            const idx = adminDataCache.kelas.findIndex(
+              k => String(k.kode_kelas).toLowerCase() === String(oldKode).toLowerCase()
+            );
+            if (idx !== -1 && res.kelas) {
+              adminDataCache.kelas[idx] = res.kelas;
+            }
+            if (res.old_nama_kelas && res.kelas && res.old_nama_kelas !== res.kelas.nama_kelas) {
+              adminDataCache.siswa.forEach(s => {
+                if (String(s.kelas).toUpperCase() === String(res.old_nama_kelas).toUpperCase()) {
+                  s.kelas = res.kelas.nama_kelas;
+                }
+              });
+            }
+          } else if (res.kelas) {
+            adminDataCache.kelas.push(res.kelas);
+          }
+
+          modalKelasAdminInstance.hide();
+          refreshAdminUI();
+          Swal.fire({ icon: 'success', title: 'Berhasil!', text: res.message, timer: 1400, showConfirmButton: false });
+        } catch (err) {
+          hideLoader();
+          Swal.fire('Server Error', err.message, 'error');
+        }
+      }
+
+      function confirmHapusKelasAdmin(kodeKelas, namaKelas) {
+        const siswaTerkait = (adminDataCache.siswa || []).filter(
+          s => String(s.kelas).trim().toUpperCase() === String(namaKelas).trim().toUpperCase()
+        );
+        if (siswaTerkait.length > 0) {
+          Swal.fire({
+            icon: 'warning',
+            title: 'Kelas Masih Digunakan Siswa!',
+            html: `Rombel Kelas <strong>${escapeHtml(namaKelas)}</strong> masih berelasi dengan <strong>${siswaTerkait.length} siswa aktif</strong>.<br><br>Silakan ubah atau pindahkan kelas siswa tersebut terlebih dahulu sebelum menghapus kelas ini.`
+          });
+          return;
+        }
+
+        Swal.fire({
+          title: 'Hapus Rombel Kelas?',
+          html: `Apakah Anda yakin ingin menghapus kelas <strong>${escapeHtml(namaKelas)}</strong> (Kode: <code>${escapeHtml(kodeKelas)}</code>) dari Tabel Master Kelas?`,
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonColor: '#ef4444',
+          cancelButtonColor: '#64748b',
+          confirmButtonText: 'Ya, Hapus Kelas!',
+          cancelButtonText: 'Batal'
+        }).then(async result => {
+          if (result.isConfirmed) {
+            showLoader('Menghapus data kelas...');
+            try {
+              const res = await callServer('hapusDataKelas', kodeKelas);
+              hideLoader();
+
+              if (res.status === 'success') {
+                adminDataCache.kelas = adminDataCache.kelas.filter(
+                  k => String(k.kode_kelas).toLowerCase() !== String(kodeKelas).toLowerCase()
+                );
+                refreshAdminUI();
+                Swal.fire({ icon: 'success', title: 'Terhapus!', text: res.message, timer: 1300, showConfirmButton: false });
+              } else {
+                Swal.fire('Gagal Menghapus', res.message, 'error');
+              }
+            } catch (err) {
+              hideLoader();
+              Swal.fire('Server Error', err.message, 'error');
+            }
+          }
+        });
+      }
+
+      function switchFromSiswaToTambahKelasModal() {
+        modalSiswaAdminInstance.hide();
+        setTimeout(() => {
+          openModalKelasAdmin();
+        }, 220);
+      }
+
+      /* -------------------- TAB 3 ADMIN: MANAJEMEN SISWA (BERELASI DENGAN TABEL KELAS) -------------------- */
+      function renderTabelAdminSiswa() {
+        const tbody = document.getElementById('tbodyAdminSiswa');
+        const filterKelas = document.getElementById('filterAdminKelasSiswa').value || 'ALL';
+        const keyword = (document.getElementById('searchAdminSiswa').value || '').trim().toLowerCase();
+
+        const filtered = adminDataCache.siswa.filter(s => {
+          const matchKelas =
+            filterKelas === 'ALL' ||
+            String(s.kelas).trim().toUpperCase() === filterKelas.toUpperCase();
+
+          const matchKeyword =
+            !keyword ||
+            String(s.nis).toLowerCase().includes(keyword) ||
+            String(s.nama_lengkap).toLowerCase().includes(keyword) ||
+            String(s.kelas).toLowerCase().includes(keyword) ||
+            String(s.username).toLowerCase().includes(keyword);
+
+          return matchKelas && matchKeyword;
+        });
+
+        if (filtered.length === 0) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="7" class="text-center text-muted py-4">Tidak ada data siswa yang sesuai dengan filter.</td>
+            </tr>`;
+          return;
+        }
+
+        tbody.innerHTML = filtered.map((s, idx) => {
+          const passKey = 'siswa_' + s.nis;
+          const isShown = Boolean(visiblePasswordsMap[passKey]);
+          const maskedPass = '••••••••';
+
+          const relKelas = (adminDataCache.kelas || []).find(
+            k => String(k.nama_kelas).toUpperCase() === String(s.kelas).toUpperCase()
+          );
+          const normTingkat = normalizeTingkatKelasClient(relKelas ? relKelas.tingkat_kelas : s.kelas);
+          const infoTingkat = normTingkat ? `Tingkat Kelas ${normTingkat}` : 'Rombel Terdaftar';
+
+          return `
+            <tr>
+              <td class="fw-semibold text-secondary">${idx + 1}</td>
+              <td class="font-monospace small fw-semibold">${escapeHtml(s.nis)}</td>
+              <td class="fw-bold text-dark">${escapeHtml(s.nama_lengkap)}</td>
+              <td>
+                <div class="d-flex align-items-center gap-2">
+                  <span class="badge bg-info-subtle text-info-emphasis px-3 py-1 rounded-pill">${escapeHtml(s.kelas)}</span>
+                  <small class="text-muted d-none d-md-inline" style="font-size: 0.72rem;">(${escapeHtml(infoTingkat)})</small>
+                </div>
+              </td>
+              <td><span class="badge bg-light text-dark border font-monospace">${escapeHtml(s.username)}</span></td>
+              <td>
+                <div class="d-inline-flex align-items-center gap-2">
+                  <span class="font-monospace small ${isShown ? 'text-dark fw-semibold' : 'text-muted'}">
+                    ${isShown ? escapeHtml(s.password) : maskedPass}
+                  </span>
+                  <button type="button" class="btn btn-light btn-sm py-0 px-2 border" title="Lihat/Sembunyikan Password" onclick="toggleTablePassword('${escapeHtml(passKey)}')">
+                    <i class="bi ${isShown ? 'bi-eye-slash text-primary' : 'bi-eye text-secondary'}"></i>
+                  </button>
+                </div>
+              </td>
+              <td class="text-end">
+                <button class="btn btn-outline-primary btn-sm rounded-3 me-1" title="Edit Siswa" onclick="openModalSiswaAdmin('${escapeHtml(s.nis)}')">
+                  <i class="bi bi-pencil"></i>
+                </button>
+                <button class="btn btn-outline-danger btn-sm rounded-3" title="Hapus Siswa" onclick="confirmHapusSiswaAdmin('${escapeHtml(s.nis)}', '${escapeHtml(s.nama_lengkap)}')">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </td>
+            </tr>`;
+        }).join('');
+      }
+
+      function openModalSiswaAdmin(nisEdit = null) {
+        const form = document.getElementById('formSiswaAdmin');
+        form.reset();
+
+        const passInput = document.getElementById('adminSiswaPassword');
+        const passIcon = document.getElementById('iconAdminSiswaPass');
+        passInput.type = 'password';
+        passIcon.className = 'bi bi-eye';
+
+        const selectKelas = document.getElementById('adminSiswaKelas');
+        const sortedKelas = (adminDataCache.kelas || []).slice().sort((a, b) =>
+          String(a.nama_kelas).localeCompare(String(b.nama_kelas))
+        );
+        const kelasNames = sortedKelas.map(k => k.nama_kelas);
+        selectKelas.innerHTML = kelasNames.map(k =>
+          `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`
+        ).join('');
+
+        if (nisEdit) {
+          const found = adminDataCache.siswa.find(s => String(s.nis) === String(nisEdit));
+          if (!found) return;
+
+          document.getElementById('modalSiswaAdminTitle').innerHTML =
+            `<i class="bi bi-pencil-square text-primary me-2"></i>Edit Data Siswa`;
+          document.getElementById('adminSiswaIsEdit').value = 'true';
+          document.getElementById('adminSiswaOldNis').value = found.nis;
+          document.getElementById('adminSiswaNis').value = found.nis;
+          document.getElementById('adminSiswaNama').value = found.nama_lengkap;
+
+          if (found.kelas && !kelasNames.includes(found.kelas)) {
+            selectKelas.innerHTML += `<option value="${escapeHtml(found.kelas)}">${escapeHtml(found.kelas)}</option>`;
+          }
+          selectKelas.value = found.kelas;
+          document.getElementById('adminSiswaUsername').value = found.username;
+          document.getElementById('adminSiswaPassword').value = found.password;
+        } else {
+          document.getElementById('modalSiswaAdminTitle').innerHTML =
+            `<i class="bi bi-person-plus-fill text-primary me-2"></i>Tambah Siswa Baru`;
+          document.getElementById('adminSiswaIsEdit').value = 'false';
+          document.getElementById('adminSiswaOldNis').value = '';
+
+          const activeFilterKelas = document.getElementById('filterAdminKelasSiswa').value;
+          if (activeFilterKelas && activeFilterKelas !== 'ALL' && kelasNames.includes(activeFilterKelas)) {
+            selectKelas.value = activeFilterKelas;
+          } else if (kelasNames.length > 0) {
+            selectKelas.value = kelasNames[0];
+          }
+        }
+
+        syncAllModernComboboxes();
+        modalSiswaAdminInstance.show();
+      }
+
+      async function handleSimpanSiswaAdmin(e) {
+        e.preventDefault();
+        const isEdit = document.getElementById('adminSiswaIsEdit').value === 'true';
+        const oldNis = document.getElementById('adminSiswaOldNis').value.trim();
+        const nis = document.getElementById('adminSiswaNis').value.trim();
+        const nama = document.getElementById('adminSiswaNama').value.trim();
+        const kelas = document.getElementById('adminSiswaKelas').value.trim().toUpperCase();
+        const username = document.getElementById('adminSiswaUsername').value.trim() || nis;
+        const password = document.getElementById('adminSiswaPassword').value.trim() || nis;
+
+        showLoader(isEdit ? 'Memperbarui data siswa...' : 'Menyimpan siswa baru...');
+        try {
+          const res = await callServer('simpanDataSiswa', {
+            is_edit: isEdit,
+            old_nis: oldNis,
+            nis: nis,
+            nama_lengkap: nama,
+            kelas: kelas,
+            username: username,
+            password: password
+          });
+          hideLoader();
+
+          if (res.status !== 'success') {
+            Swal.fire('Gagal Menyimpan', res.message, 'error');
+            return;
+          }
+
+          if (isEdit) {
+            const idx = adminDataCache.siswa.findIndex(s => String(s.nis) === String(oldNis));
+            if (idx !== -1 && res.siswa) adminDataCache.siswa[idx] = res.siswa;
+          } else if (res.siswa) {
+            adminDataCache.siswa.push(res.siswa);
+          }
+
+          modalSiswaAdminInstance.hide();
+          refreshAdminUI();
+          Swal.fire({ icon: 'success', title: 'Berhasil!', text: res.message, timer: 1400, showConfirmButton: false });
+        } catch (err) {
+          hideLoader();
+          Swal.fire('Server Error', err.message, 'error');
+        }
+      }
+
+      function confirmHapusSiswaAdmin(nis, nama) {
+        Swal.fire({
+          title: 'Hapus Akun Siswa?',
+          html: `Apakah Anda yakin ingin menghapus data siswa <strong>${escapeHtml(nama)}</strong> (NIS: <code>${escapeHtml(nis)}</code>)?`,
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonColor: '#ef4444',
+          cancelButtonColor: '#64748b',
+          confirmButtonText: 'Ya, Hapus!',
+          cancelButtonText: 'Batal'
+        }).then(async result => {
+          if (result.isConfirmed) {
+            showLoader('Menghapus data siswa...');
+            try {
+              const res = await callServer('hapusDataSiswa', nis);
+              hideLoader();
+
+              if (res.status === 'success') {
+                adminDataCache.siswa = adminDataCache.siswa.filter(s => String(s.nis) !== String(nis));
+                refreshAdminUI();
+                Swal.fire({ icon: 'success', title: 'Terhapus!', text: res.message, timer: 1300, showConfirmButton: false });
+              } else {
+                Swal.fire('Gagal Menghapus', res.message, 'error');
+              }
+            } catch (err) {
+              hideLoader();
+              Swal.fire('Server Error', err.message, 'error');
+            }
+          }
+        });
+      }
+
+      /* -------------------- TAB 4 ADMIN: PENGATURAN WEBSITE & HALAMAN LOGIN -------------------- */
+      function populatePengaturanWebsiteForm() {
+        const s = websiteSettingsCache || DEFAULT_WEBSITE_SETTINGS;
+        const elNama = document.getElementById('setWebNama');
+        if (!elNama) return;
+
+        elNama.value = s.nama_website || DEFAULT_WEBSITE_SETTINGS.nama_website;
+        document.getElementById('setWebSubtitle').value = s.subtitle_website || DEFAULT_WEBSITE_SETTINGS.subtitle_website;
+        document.getElementById('setWebLogoUrl').value = s.logo_url || '';
+        const elEmail = document.getElementById('setWebEmailNotifikasi');
+        if (elEmail) elEmail.value = s.email_notifikasi || '';
+        document.getElementById('setLoginJudul').value = s.login_judul || DEFAULT_WEBSITE_SETTINGS.login_judul;
+        document.getElementById('setLoginSubtitle').value = s.login_subtitle || DEFAULT_WEBSITE_SETTINGS.login_subtitle;
+        document.getElementById('setLoginFooter').value = s.login_footer || DEFAULT_WEBSITE_SETTINGS.login_footer;
+
+        const bgEl = document.getElementById('setLoginBgGradient');
+        if (bgEl) {
+          const bgVal = s.login_bg_gradient || DEFAULT_WEBSITE_SETTINGS.login_bg_gradient;
+          const existsBg = Array.from(bgEl.options).some(o => o.value === bgVal);
+          if (!existsBg) {
+            bgEl.innerHTML += `<option value="${escapeHtml(bgVal)}">Tema Kustom</option>`;
+          }
+          bgEl.value = bgVal;
+        }
+
+        updateWebsiteSettingsLivePreview();
+      }
+
+      function updateWebsiteSettingsLivePreview() {
+        const nama = (document.getElementById('setWebNama')?.value || '').trim() || DEFAULT_WEBSITE_SETTINGS.nama_website;
+        const subtitle = (document.getElementById('setWebSubtitle')?.value || '').trim() || DEFAULT_WEBSITE_SETTINGS.subtitle_website;
+        const logoRaw = (document.getElementById('setWebLogoUrl')?.value || '').trim();
+        const logoResolved = resolveClientLogoUrl(logoRaw);
+        const loginJudul = (document.getElementById('setLoginJudul')?.value || '').trim() || DEFAULT_WEBSITE_SETTINGS.login_judul;
+        const loginSubtitle = (document.getElementById('setLoginSubtitle')?.value || '').trim();
+        const loginFooter = (document.getElementById('setLoginFooter')?.value || '').trim();
+        const loginBg = document.getElementById('setLoginBgGradient')?.value || DEFAULT_WEBSITE_SETTINGS.login_bg_gradient;
+
+        const adminLogoBox = document.getElementById('adminLogoPreviewBox');
+        const prevNavLogo = document.getElementById('previewNavLogo');
+        const prevLoginLogo = document.getElementById('previewLoginLogo');
+
+        if (adminLogoBox) {
+          adminLogoBox.innerHTML = logoResolved
+            ? buildLogoImgTagHtml(logoResolved, logoRaw, 4)
+            : `<i class="bi bi-mortarboard-fill fs-2 text-primary"></i>`;
+        }
+        if (prevNavLogo) {
+          if (logoResolved) {
+            prevNavLogo.className = 'rounded-3 border bg-white d-flex align-items-center justify-content-center overflow-hidden';
+            prevNavLogo.innerHTML = buildLogoImgTagHtml(logoResolved, logoRaw, 2);
+          } else {
+            prevNavLogo.className = 'bg-primary text-white rounded-3 d-flex align-items-center justify-content-center overflow-hidden';
+            prevNavLogo.innerHTML = `<i class="bi bi-journal-check"></i>`;
+          }
+        }
+        if (prevLoginLogo) {
+          if (logoResolved) {
+            prevLoginLogo.className = 'd-inline-flex align-items-center justify-content-center bg-white border rounded-3 p-1 mb-2 overflow-hidden';
+            prevLoginLogo.innerHTML = buildLogoImgTagHtml(logoResolved, logoRaw, 0);
+          } else {
+            prevLoginLogo.className = 'd-inline-flex align-items-center justify-content-center bg-primary bg-opacity-10 text-primary rounded-3 p-2 mb-2 overflow-hidden';
+            prevLoginLogo.innerHTML = `<i class="bi bi-mortarboard-fill fs-3"></i>`;
+          }
+        }
+
+        applyNavbarBrandVisual(nama, subtitle, logoResolved, logoRaw);
+        websiteSettingsCache = Object.assign({}, websiteSettingsCache, {
+          nama_website: nama,
+          subtitle_website: subtitle,
+          logo_url: logoRaw,
+          logo_url_resolved: logoResolved,
+          login_judul: loginJudul,
+          login_subtitle: loginSubtitle,
+          login_footer: loginFooter,
+          login_bg_gradient: loginBg
+        });
+        try {
+          localStorage.setItem(STORAGE_KEYS.WEB_SETTINGS, JSON.stringify(websiteSettingsCache));
+        } catch (e) {}
+
+        const prevNavTitle = document.getElementById('previewNavTitle');
+        const prevNavSub = document.getElementById('previewNavSubtitle');
+        const prevLoginBg = document.getElementById('previewLoginBg');
+        const prevLoginJudul = document.getElementById('previewLoginJudul');
+        const prevLoginSub = document.getElementById('previewLoginSubtitle');
+        const prevLoginFooter = document.getElementById('previewLoginFooter');
+
+        if (prevNavTitle) prevNavTitle.textContent = nama;
+        if (prevNavSub) prevNavSub.textContent = subtitle;
+        if (prevLoginBg) prevLoginBg.style.background = loginBg;
+        if (prevLoginJudul) prevLoginJudul.textContent = loginJudul;
+        if (prevLoginSub) prevLoginSub.textContent = loginSubtitle || '-';
+        if (prevLoginFooter) prevLoginFooter.textContent = loginFooter || '-';
+      }
+
+      function handleUploadLogoFile(e) {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        if (!file.type.startsWith('image/')) {
+          Swal.fire('Format Tidak Didukung', 'Pilih file gambar (PNG, JPG, WebP, atau SVG).', 'warning');
+          e.target.value = '';
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = function (ev) {
+          const img = new Image();
+          img.onload = function () {
+            const maxDim = 136;
+            let w = img.width || 136;
+            let h = img.height || 136;
+            if (w > maxDim || h > maxDim) {
+              const ratio = Math.min(maxDim / w, maxDim / h);
+              w = Math.max(1, Math.round(w * ratio));
+              h = Math.max(1, Math.round(h * ratio));
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, w, h);
+            ctx.drawImage(img, 0, 0, w, h);
+            let dataUrl = canvas.toDataURL('image/webp', 0.88);
+            if (!dataUrl.startsWith('data:image/webp') || dataUrl.length > 36000) {
+              dataUrl = canvas.toDataURL('image/png');
+            }
+            if (dataUrl.length > 42000) {
+              ctx.fillStyle = '#ffffff';
+              ctx.fillRect(0, 0, w, h);
+              ctx.drawImage(img, 0, 0, w, h);
+              dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+            }
+            document.getElementById('setWebLogoUrl').value = dataUrl;
+            updateWebsiteSettingsLivePreview();
+          };
+          img.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+        e.target.value = '';
+      }
+
+      function handleClearLogoWeb() {
+        document.getElementById('setWebLogoUrl').value = '';
+        if (websiteSettingsCache) {
+          websiteSettingsCache.logo_url = '';
+          websiteSettingsCache.logo_url_resolved = '';
+        }
+        updateWebsiteSettingsLivePreview();
+      }
+
+      function resetPengaturanWebsiteForm() {
+        document.getElementById('setWebNama').value = DEFAULT_WEBSITE_SETTINGS.nama_website;
+        document.getElementById('setWebSubtitle').value = DEFAULT_WEBSITE_SETTINGS.subtitle_website;
+        document.getElementById('setWebLogoUrl').value = '';
+        const elEmail = document.getElementById('setWebEmailNotifikasi');
+        if (elEmail) elEmail.value = '';
+        document.getElementById('setLoginJudul').value = DEFAULT_WEBSITE_SETTINGS.login_judul;
+        document.getElementById('setLoginSubtitle').value = DEFAULT_WEBSITE_SETTINGS.login_subtitle;
+        document.getElementById('setLoginFooter').value = DEFAULT_WEBSITE_SETTINGS.login_footer;
+        document.getElementById('setLoginBgGradient').value = DEFAULT_WEBSITE_SETTINGS.login_bg_gradient;
+        if (websiteSettingsCache) {
+          websiteSettingsCache.logo_url = '';
+          websiteSettingsCache.logo_url_resolved = '';
+          websiteSettingsCache.email_notifikasi = '';
+        }
+        updateWebsiteSettingsLivePreview();
+      }
+
+      async function handleSimpanPengaturanWebsite(e) {
+        e.preventDefault();
+        const payload = {
+          nama_website: document.getElementById('setWebNama').value.trim(),
+          subtitle_website: document.getElementById('setWebSubtitle').value.trim(),
+          logo_url: document.getElementById('setWebLogoUrl').value.trim(),
+          email_notifikasi: (document.getElementById('setWebEmailNotifikasi')?.value || '').trim(),
+          login_judul: document.getElementById('setLoginJudul').value.trim(),
+          login_subtitle: document.getElementById('setLoginSubtitle').value.trim(),
+          login_footer: document.getElementById('setLoginFooter').value.trim(),
+          login_bg_gradient: document.getElementById('setLoginBgGradient').value.trim()
+        };
+
+        applyWebsiteSettings(payload, true);
+
+        showLoader('Menyimpan pengaturan website & halaman login...');
+        try {
+          const res = await callServer('simpanPengaturanWebsite', payload);
+          hideLoader();
+
+          if (res.status !== 'success') {
+            Swal.fire('Gagal Menyimpan', res.message, 'error');
+            return;
+          }
+
+          if (res.settings) {
+            applyWebsiteSettings(res.settings, true);
+            populatePengaturanWebsiteForm();
+          }
+          Swal.fire({ icon: 'success', title: 'Tersimpan!', text: res.message, timer: 1600, showConfirmButton: false });
+        } catch (err) {
+          hideLoader();
+          Swal.fire('Server Error', err.message, 'error');
+        }
+      }
+
+      /* -------------------- UNIVERSAL TABLE PAGINATION, SEARCH & GLOBAL NAVBAR SEARCH ENGINE -------------------- */
+      const tablePaginationState = {};
+
+      const TABLE_SEARCH_PLACEHOLDERS = {
+        tbodyRiwayatSiswa: 'Cari mapel, jenis penilaian, waktu, atau nilai...',
+        tbodyBankSoal: 'Cari pertanyaan, opsi jawaban, mapel, atau ID soal...',
+        tbodyPengaturanUjian: 'Cari mata pelajaran, jenis ujian, durasi, atau status...',
+        tbodyRekapNilai: 'Cari NIS, nama siswa, kelas, mapel, nilai, atau catatan...',
+        tbodyMasterMapelGuru: 'Cari kode mapel, nama mata pelajaran, atau kelas...',
+        tbodyMasterJenisPenilaian: 'Cari kode jenis atau nama jenis penilaian...',
+        tbodyAdminGuru: 'Cari NIP/ID, nama guru, username, atau mapel ampuan...',
+        tbodyAdminMapel: 'Cari kode mapel, nama mata pelajaran, atau tingkat...',
+        tbodyAdminKelas: 'Cari ID kelas, nama rombel kelas, atau tingkat...',
+        tbodyAdminSiswa: 'Cari NIS, nama siswa, rombel kelas, atau username...'
+      };
+
+      function initUniversalTablePaginationEngine() {
+        const tbodies = document.querySelectorAll('table.table-modern tbody[id]');
+        tbodies.forEach(tbody => {
+          const id = tbody.id;
+          if (!id || tbody.dataset.pagerInit === '1') return;
+          tbody.dataset.pagerInit = '1';
+
+          const respWrap = tbody.closest('.table-responsive');
+          if (!respWrap || !respWrap.parentNode) return;
+
+          tablePaginationState[id] = { pageSize: 10, page: 1, query: '', _updatingDom: false };
+          const placeholderText = TABLE_SEARCH_PLACEHOLDERS[id] || 'Ketik kata kunci untuk mencari data di tabel ini...';
+
+          const topBar = document.createElement('div');
+          topBar.className = 'tbl-pager-bar no-print';
+          topBar.id = `tblPagerTop_${id}`;
+          topBar.innerHTML = `
+            <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap w-100 w-md-auto">
+              <div class="d-flex align-items-center gap-2">
+                <span>Tampilkan</span>
+                <select class="form-select form-select-sm tbl-pager-select" id="tblPageSize_${id}" aria-label="Jumlah data per halaman">
+                  <option value="5">5</option>
+                  <option value="10" selected>10</option>
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                  <option value="ALL">Semua</option>
+                </select>
+                <span>data</span>
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-2 py-1 d-md-none"
+                id="tblMobileViewToggle_${id}" style="font-size:0.72rem;"
+                onclick="toggleMobileTableLayoutMode('${escapeHtml(id)}')">
+                <i class="bi bi-table me-1"></i>Mode Tabel
+              </button>
+            </div>
+            <div class="d-flex align-items-center gap-2 flex-wrap flex-grow-1 justify-content-between justify-content-md-end w-100 w-md-auto">
+              <div class="tbl-pager-search-wrap">
+                <i class="bi bi-search tbl-pager-search-icon"></i>
+                <input type="text" class="tbl-pager-search-input" id="tblSearch_${id}"
+                  placeholder="${escapeHtml(placeholderText)}" autocomplete="off"
+                  aria-label="Cari data pada tabel">
+                <button type="button" class="tbl-pager-search-clear" id="tblSearchClear_${id}" title="Bersihkan pencarian">
+                  <i class="bi bi-x-circle-fill"></i>
+                </button>
+              </div>
+              <span class="fw-medium text-secondary text-nowrap small" id="tblPagerInfo_${id}">Menampilkan 0 data</span>
+            </div>
+          `;
+          respWrap.parentNode.insertBefore(topBar, respWrap);
+
+          const footerBar = document.createElement('div');
+          footerBar.className = 'tbl-pager-footer no-print';
+          footerBar.id = `tblPagerFooter_${id}`;
+          footerBar.innerHTML = `
+            <div id="tblPagerPageText_${id}">Halaman 1 dari 1</div>
+            <div class="tbl-pager-btns" id="tblPagerBtns_${id}"></div>
+          `;
+          respWrap.parentNode.insertBefore(footerBar, respWrap.nextSibling);
+
+          const sizeSelect = document.getElementById(`tblPageSize_${id}`);
+          if (sizeSelect) {
+            sizeSelect.addEventListener('change', () => {
+              const val = sizeSelect.value;
+              tablePaginationState[id].pageSize = val === 'ALL' ? 'ALL' : (parseInt(val, 10) || 10);
+              tablePaginationState[id].page = 1;
+              applyTablePagination(id);
+            });
+          }
+
+          const searchInput = document.getElementById(`tblSearch_${id}`);
+          const searchClear = document.getElementById(`tblSearchClear_${id}`);
+          if (searchInput) {
+            searchInput.addEventListener('input', () => {
+              const q = searchInput.value || '';
+              tablePaginationState[id].query = q;
+              tablePaginationState[id].page = 1;
+              if (searchClear) {
+                searchClear.style.display = q.trim().length > 0 ? 'inline-block' : 'none';
+              }
+              applyTablePagination(id);
+            });
+          }
+          if (searchClear && searchInput) {
+            searchClear.addEventListener('click', () => {
+              searchInput.value = '';
+              tablePaginationState[id].query = '';
+              tablePaginationState[id].page = 1;
+              searchClear.style.display = 'none';
+              applyTablePagination(id);
+              searchInput.focus();
+            });
+          }
+
+          const observer = new MutationObserver(() => {
+            if (tablePaginationState[id] && tablePaginationState[id]._updatingDom) return;
+            applyTablePagination(id);
+          });
+          observer.observe(tbody, { childList: true });
+
+          applyTablePagination(id);
+        });
+      }
+
+      function toggleMobileTableLayoutMode(tbodyId) {
+        const tbody = document.getElementById(tbodyId);
+        if (!tbody) return;
+        const respWrap = tbody.closest('.table-responsive');
+        const btn = document.getElementById(`tblMobileViewToggle_${tbodyId}`);
+        if (!respWrap) return;
+
+        const isScrollTable = respWrap.classList.toggle('mobile-table-scroll-mode');
+        if (btn) {
+          btn.innerHTML = isScrollTable
+            ? `<i class="bi bi-view-stacked me-1"></i>Mode Kartu`
+            : `<i class="bi bi-table me-1"></i>Mode Tabel`;
+        }
+      }
+
+      function setTableSearchQuery(tbodyId, queryStr) {
+        if (!tablePaginationState[tbodyId]) return;
+        const inputEl = document.getElementById(`tblSearch_${tbodyId}`);
+        const clearEl = document.getElementById(`tblSearchClear_${tbodyId}`);
+        const q = String(queryStr || '');
+        tablePaginationState[tbodyId].query = q;
+        tablePaginationState[tbodyId].page = 1;
+        if (inputEl) inputEl.value = q;
+        if (clearEl) clearEl.style.display = q.trim().length > 0 ? 'inline-block' : 'none';
+        applyTablePagination(tbodyId);
+      }
+
+      function goToTablePage(tbodyId, targetPage) {
+        if (!tablePaginationState[tbodyId]) return;
+        tablePaginationState[tbodyId].page = targetPage;
+        applyTablePagination(tbodyId);
+      }
+
+      function applyTablePagination(tbodyId) {
+        const tbody = document.getElementById(tbodyId);
+        const state = tablePaginationState[tbodyId];
+        if (!tbody || !state) return;
+
+        state._updatingDom = true;
+        try {
+          tbody.querySelectorAll(':scope > tr.tbl-search-empty-row').forEach(r => r.remove());
+
+          const allRows = Array.from(tbody.querySelectorAll(':scope > tr:not(.tbl-search-empty-row)'));
+          const infoEl = document.getElementById(`tblPagerInfo_${tbodyId}`);
+          const pageTextEl = document.getElementById(`tblPagerPageText_${tbodyId}`);
+          const btnsEl = document.getElementById(`tblPagerBtns_${tbodyId}`);
+          const footerEl = document.getElementById(`tblPagerFooter_${tbodyId}`);
+
+          const isOnlyEmptyState =
+            allRows.length === 1 &&
+            allRows[0].children.length === 1 &&
+            allRows[0].children[0].hasAttribute('colspan');
+
+          const tableEl = tbody.closest('table');
+          const thLabels = tableEl
+            ? Array.from(tableEl.querySelectorAll('thead th')).map(th => (th.textContent || '').trim())
+            : [];
+          if (!isOnlyEmptyState && thLabels.length > 0) {
+            allRows.forEach(tr => {
+              Array.from(tr.children).forEach((td, cIdx) => {
+                if (td.hasAttribute('colspan')) return;
+                const rawLabel = thLabels[cIdx] || '';
+                if (rawLabel) {
+                  td.setAttribute('data-label', rawLabel);
+                }
+
+                if (td.dataset.mWrapped !== '1') {
+                  td.dataset.mWrapped = '1';
+                  const valWrap = document.createElement('div');
+                  valWrap.className = 'tbl-m-val';
+                  while (td.firstChild) {
+                    valWrap.appendChild(td.firstChild);
+                  }
+                  td.appendChild(valWrap);
+                }
+
+                const lblLower = rawLabel.toLowerCase();
+                if (cIdx === 0 && (lblLower === 'no' || lblLower === '#')) {
+                  td.setAttribute('data-m-role', 'index');
+                } else if (
+                  cIdx === thLabels.length - 1 &&
+                  (lblLower.includes('aksi') ||
+                    lblLower.includes('pembahasan') ||
+                    lblLower.includes('catatan') ||
+                    lblLower.includes('simpan') ||
+                    lblLower.includes('hapus'))
+                ) {
+                  td.setAttribute('data-m-role', 'action');
+                } else if (
+                  lblLower.includes('pertanyaan') ||
+                  lblLower.includes('status') ||
+                  lblLower.includes('durasi') ||
+                  lblLower.includes('paket') ||
+                  lblLower.includes('mapel') ||
+                  lblLower.includes('pelajaran') ||
+                  lblLower.includes('relasi') ||
+                  lblLower.includes('keterangan') ||
+                  Boolean(td.querySelector('.combo-modern-wrap, select, input[type="text"], input[type="number"]')) ||
+                  ((td.textContent || '').trim().length > 36)
+                ) {
+                  td.setAttribute('data-m-role', 'stacked');
+                } else {
+                  td.setAttribute('data-m-role', 'kv');
+                }
+              });
+            });
+          }
+
+          const rawTotalItems = isOnlyEmptyState ? 0 : allRows.length;
+
+          if (rawTotalItems === 0) {
+            allRows.forEach(r => { r.style.display = ''; });
+            if (infoEl) infoEl.textContent = 'Menampilkan 0 data';
+            if (pageTextEl) pageTextEl.textContent = 'Halaman 0 dari 0';
+            if (btnsEl) btnsEl.innerHTML = '';
+            if (footerEl) footerEl.style.display = 'none';
+            return;
+          }
+
+          const q = String(state.query || '').trim().toLowerCase();
+          let matchedRows = allRows;
+          if (q.length > 0) {
+            matchedRows = [];
+            allRows.forEach(tr => {
+              const text = (tr.textContent || '').toLowerCase();
+              if (text.includes(q)) {
+                matchedRows.push(tr);
+              } else {
+                tr.style.display = 'none';
+              }
+            });
+          }
+
+          const totalItems = matchedRows.length;
+
+          if (totalItems === 0) {
+            const colCount = tbody.closest('table')?.querySelectorAll('thead th')?.length || 8;
+            const emptyTr = document.createElement('tr');
+            emptyTr.className = 'tbl-search-empty-row';
+            emptyTr.innerHTML = `<td colspan="${colCount}" class="text-center text-muted py-4"><i class="bi bi-search me-2"></i>Tidak ditemukan data yang cocok dengan pencarian <strong>"${escapeHtml(state.query.trim())}"</strong>.</td>`;
+            tbody.appendChild(emptyTr);
+
+            if (infoEl) infoEl.textContent = `0 dari ${rawTotalItems} data cocok`;
+            if (pageTextEl) pageTextEl.textContent = 'Halaman 0 dari 0';
+            if (btnsEl) btnsEl.innerHTML = '';
+            if (footerEl) footerEl.style.display = 'none';
+            return;
+          }
+
+          const pageSize = state.pageSize === 'ALL' ? totalItems : Math.max(1, parseInt(state.pageSize, 10) || 10);
+          const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+          if (state.page > totalPages) state.page = totalPages;
+          if (state.page < 1) state.page = 1;
+
+          const startIdx = (state.page - 1) * pageSize;
+          const endIdx = Math.min(startIdx + pageSize, totalItems);
+
+          matchedRows.forEach((tr, idx) => {
+            tr.style.display = (idx >= startIdx && idx < endIdx) ? '' : 'none';
+          });
+
+          if (infoEl) {
+            const filterSuffix = q.length > 0 ? ` (difilter dari ${rawTotalItems})` : '';
+            infoEl.textContent = `Menampilkan ${startIdx + 1}–${endIdx} dari ${totalItems} data${filterSuffix}`;
+          }
+          if (pageTextEl) {
+            pageTextEl.textContent = `Halaman ${state.page} dari ${totalPages}`;
+          }
+
+          if (footerEl) {
+            footerEl.style.display = totalPages > 1 ? 'flex' : 'none';
+          }
+
+          if (btnsEl) {
+            if (totalPages <= 1) {
+              btnsEl.innerHTML = '';
+              return;
+            }
+
+            const safeId = escapeHtml(tbodyId);
+            let html = `<button type="button" class="tbl-pager-btn" ${state.page <= 1 ? 'disabled' : ''} onclick="goToTablePage('${safeId}', ${state.page - 1})" title="Halaman Sebelumnya"><i class="bi bi-chevron-left"></i></button>`;
+
+            let startPage = Math.max(1, state.page - 2);
+            let endPage = Math.min(totalPages, startPage + 4);
+            if (endPage - startPage < 4) {
+              startPage = Math.max(1, endPage - 4);
+            }
+
+            if (startPage > 1) {
+              html += `<button type="button" class="tbl-pager-btn" onclick="goToTablePage('${safeId}', 1)">1</button>`;
+              if (startPage > 2) html += `<span class="px-1 text-muted">…</span>`;
+            }
+
+            for (let p = startPage; p <= endPage; p++) {
+              html += `<button type="button" class="tbl-pager-btn ${p === state.page ? 'active' : ''}" onclick="goToTablePage('${safeId}', ${p})">${p}</button>`;
+            }
+
+            if (endPage < totalPages) {
+              if (endPage < totalPages - 1) html += `<span class="px-1 text-muted">…</span>`;
+              html += `<button type="button" class="tbl-pager-btn" onclick="goToTablePage('${safeId}', ${totalPages})">${totalPages}</button>`;
+            }
+
+            html += `<button type="button" class="tbl-pager-btn" ${state.page >= totalPages ? 'disabled' : ''} onclick="goToTablePage('${safeId}', ${state.page + 1})" title="Halaman Berikutnya"><i class="bi bi-chevron-right"></i></button>`;
+            btnsEl.innerHTML = html;
+          }
+        } finally {
+          state._updatingDom = false;
+        }
+      }
+
+      /* -------------------- FITUR GLOBAL SMART SEARCH DI NAVBAR -------------------- */
+      let globalSearchResultsCache = [];
+
+      function clearNavbarGlobalSearch() {
+        const input = document.getElementById('navGlobalSearchInput');
+        const dropdown = document.getElementById('navGlobalSearchDropdown');
+        const clearBtn = document.getElementById('navGlobalSearchClear');
+        const kbdEl = document.getElementById('navGlobalSearchKbd');
+        if (input) input.value = '';
+        if (dropdown) {
+          dropdown.style.display = 'none';
+          dropdown.innerHTML = '';
+        }
+        if (clearBtn) clearBtn.style.display = 'none';
+        if (kbdEl) kbdEl.classList.remove('d-md-none');
+      }
+
+      function buildRoleMenusForGlobalSearch(role) {
+        if (role === 'siswa') {
+          return [
+            { category: 'Halaman & Navigasi Siswa', icon: 'bi-grid-1x2-fill', title: 'Dashboard Siswa', sub: 'Ringkasan progres ujian & rata-rata capaian nilai', tabBtnId: 'tab-dashboard-siswa-btn' },
+            { category: 'Halaman & Navigasi Siswa', icon: 'bi-collection-play-fill', title: 'Daftar Ulangan & Ujian', sub: 'Daftar paket penilaian yang berstatus OPEN untuk kelas Anda', tabBtnId: 'tab-ujian-btn' },
+            { category: 'Halaman & Navigasi Siswa', icon: 'bi-clock-history', title: 'Riwayat Nilai Saya', sub: 'Tabel hasil ujian dan pembahasan soal', tabBtnId: 'tab-riwayat-btn', tbodyId: 'tbodyRiwayatSiswa' },
+            { category: 'Halaman & Navigasi Siswa', icon: 'bi-gear-fill', title: 'Pengaturan Profil & Password', sub: 'Lihat identitas NIS, rombel kelas, dan ubah password', tabBtnId: 'tab-profil-siswa-btn' }
+          ];
+        }
+        if (role === 'guru') {
+          return [
+            { category: 'Halaman & Navigasi Guru', icon: 'bi-grid-1x2-fill', title: 'Dashboard Guru', sub: 'Ringkasan statistik bank soal, ujian aktif, dan nilai masuk', tabBtnId: 'tab-guru-dashboard-btn' },
+            { category: 'Halaman & Navigasi Guru', icon: 'bi-journal-code', title: 'Bank Soal Saya', sub: 'Kelola butir soal, import Word (.docx), dan export Word (.docx) / PDF', tabBtnId: 'tab-guru-banksoal-btn', tbodyId: 'tbodyBankSoal' },
+            { category: 'Halaman & Navigasi Guru', icon: 'bi-sliders', title: 'Jadwal & Jenis Penilaian', sub: 'Atur status OPEN/CLOSE, durasi timer, acak soal, & visibilitas nilai', tabBtnId: 'tab-guru-pengaturan-btn', tbodyId: 'tbodyPengaturanUjian' },
+            { category: 'Halaman & Navigasi Guru', icon: 'bi-bar-chart-line-fill', title: 'Rekap Nilai Siswa & Anti-Cheat', sub: 'Pantau nilai siswa, log kecurangan, print A4, & export Excel', tabBtnId: 'tab-guru-rekap-btn', tbodyId: 'tbodyRekapNilai' },
+            { category: 'Halaman & Navigasi Guru', icon: 'bi-database-check', title: 'Master Mapel & Jenis Penilaian', sub: 'Referensi mata pelajaran ampuan dan kategori penilaian', tabBtnId: 'tab-guru-master-btn', tbodyId: 'tbodyMasterMapelGuru' },
+            { category: 'Halaman & Navigasi Guru', icon: 'bi-shield-lock-fill', title: 'Profil & Password Guru', sub: 'Informasi akun guru pengampu dan ubah kata sandi', tabBtnId: 'tab-profil-guru-btn' }
+          ];
+        }
+        if (role === 'admin') {
+          return [
+            { category: 'Halaman & Navigasi Admin', icon: 'bi-grid-1x2-fill', title: 'Dashboard Administrator', sub: 'Ringkasan statistik guru, mata pelajaran, kelas, dan siswa', tabBtnId: 'tab-admin-dashboard-btn' },
+            { category: 'Halaman & Navigasi Admin', icon: 'bi-person-video3', title: 'Kelola Data Guru & Mapel Ampuan', sub: 'Tambah/edit guru dan penugasan mapel per rombel kelas', tabBtnId: 'tab-admin-guru-btn', tbodyId: 'tbodyAdminGuru' },
+            { category: 'Halaman & Navigasi Admin', icon: 'bi-journal-bookmark-fill', title: 'Kelola Master Mata Pelajaran', sub: 'Daftar kode mapel, nama mata pelajaran, dan tingkat kelas', tabBtnId: 'tab-admin-mapel-btn', tbodyId: 'tbodyAdminMapel' },
+            { category: 'Halaman & Navigasi Admin', icon: 'bi-building', title: 'Kelola Master Rombel Kelas', sub: 'Daftar kelas aktif dan kapasitas siswa per rombel', tabBtnId: 'tab-admin-kelas-btn', tbodyId: 'tbodyAdminKelas' },
+            { category: 'Halaman & Navigasi Admin', icon: 'bi-people-fill', title: 'Kelola Data Peserta Didik (Siswa)', sub: 'Tambah/edit siswa, NIS, rombel kelas, dan akun login', tabBtnId: 'tab-admin-siswa-btn', tbodyId: 'tbodyAdminSiswa' },
+            { category: 'Halaman & Navigasi Admin', icon: 'bi-sliders2-vertical', title: 'Pengaturan Website & Login', sub: 'Kustomisasi nama sekolah, logo, dan tampilan halaman login', tabBtnId: 'tab-admin-website-btn' }
+          ];
+        }
+        return [];
+      }
+
+      function handleNavbarGlobalSearch(rawQuery) {
+        const dropdown = document.getElementById('navGlobalSearchDropdown');
+        const clearBtn = document.getElementById('navGlobalSearchClear');
+        const kbdEl = document.getElementById('navGlobalSearchKbd');
+        if (!dropdown || !currentUser || !currentUser.role) return;
+
+        const q = String(rawQuery || '').trim().toLowerCase();
+        if (clearBtn) clearBtn.style.display = q.length > 0 ? 'inline-block' : 'none';
+        if (kbdEl) {
+          if (q.length > 0) kbdEl.classList.add('d-md-none');
+          else kbdEl.classList.remove('d-md-none');
+        }
+
+        const role = currentUser.role;
+        const menus = buildRoleMenusForGlobalSearch(role);
+        const results = [];
+
+        if (q.length === 0) {
+          menus.forEach(m => results.push({ ...m, queryToApply: '' }));
+        } else {
+          menus.forEach(m => {
+            if (m.title.toLowerCase().includes(q) || m.sub.toLowerCase().includes(q)) {
+              results.push({ ...m, queryToApply: '' });
+            }
+          });
+
+          if (role === 'guru' && guruDataCache) {
+            (guruDataCache.bank_soal || []).forEach(s => {
+              const hay = `${s.id_soal || ''} ${s.mapel_induk || ''} ${s.jenis_ujian || ''} ${s.pertanyaan || ''} ${s.opsi_a || ''} ${s.opsi_b || ''} ${s.opsi_c || ''} ${s.opsi_d || ''}`.toLowerCase();
+              if (hay.includes(q)) {
+                results.push({
+                  category: 'Bank Soal Guru',
+                  icon: 'bi-file-earmark-text',
+                  title: `[${s.mapel_induk} - ${s.jenis_ujian}] ${String(s.pertanyaan || '').slice(0, 65)}`,
+                  sub: `ID: ${s.id_soal} • Kunci: ${s.kunci_jawaban}`,
+                  tabBtnId: 'tab-guru-banksoal-btn',
+                  tbodyId: 'tbodyBankSoal',
+                  resetGuruFilters: true,
+                  queryToApply: rawQuery.trim()
+                });
+              }
+            });
+
+            (guruDataCache.pengaturan_ujian || []).forEach(p => {
+              const hay = `${p.mapel_induk || ''} ${p.jenis_ujian || ''} ${p.status_ujian || ''} ${p.durasi_menit || ''}`.toLowerCase();
+              if (hay.includes(q)) {
+                results.push({
+                  category: 'Jadwal & Penilaian',
+                  icon: 'bi-calendar2-check',
+                  title: `${p.mapel_induk} — ${p.jenis_ujian}`,
+                  sub: `Status: ${p.status_ujian} • Durasi: ${p.durasi_menit} Menit`,
+                  tabBtnId: 'tab-guru-pengaturan-btn',
+                  tbodyId: 'tbodyPengaturanUjian',
+                  queryToApply: rawQuery.trim()
+                });
+              }
+            });
+
+            (guruDataCache.hasil_ujian || []).forEach(r => {
+              const hay = `${r.nis || ''} ${r.nama_lengkap || ''} ${r.kelas || ''} ${r.mapel_induk || ''} ${r.jenis_ujian || ''} ${r.nilai_akhir || ''} ${r.catatan_kecurangan || ''}`.toLowerCase();
+              if (hay.includes(q)) {
+                results.push({
+                  category: 'Rekap Nilai Siswa',
+                  icon: 'bi-person-check-fill',
+                  title: `${r.nama_lengkap} (${r.nis}) — Kelas ${r.kelas || '-'}`,
+                  sub: `${r.mapel_induk} • ${r.jenis_ujian} • Nilai: ${r.nilai_akhir}`,
+                  tabBtnId: 'tab-guru-rekap-btn',
+                  tbodyId: 'tbodyRekapNilai',
+                  resetRekapFilters: true,
+                  queryToApply: rawQuery.trim()
+                });
+              }
+            });
+          } else if (role === 'admin' && adminDataCache) {
+            (adminDataCache.guru || []).forEach(g => {
+              const hay = `${g.nip_atau_id || ''} ${g.nama_lengkap || ''} ${g.username || ''} ${g.mata_pelajaran || ''}`.toLowerCase();
+              if (hay.includes(q)) {
+                results.push({
+                  category: 'Data Guru Pengampu',
+                  icon: 'bi-person-badge',
+                  title: `${g.nama_lengkap} (${g.nip_atau_id})`,
+                  sub: `Mapel Ampuan: ${g.mata_pelajaran || '-'}`,
+                  tabBtnId: 'tab-admin-guru-btn',
+                  tbodyId: 'tbodyAdminGuru',
+                  queryToApply: rawQuery.trim()
+                });
+              }
+            });
+
+            (adminDataCache.master_mapel || []).forEach(m => {
+              const hay = `${m.kode_mapel || ''} ${m.nama_mapel || ''} ${m.kelas || ''} ${m.kelompok || ''}`.toLowerCase();
+              if (hay.includes(q)) {
+                results.push({
+                  category: 'Master Mata Pelajaran',
+                  icon: 'bi-book',
+                  title: `${m.nama_mapel} (${m.kode_mapel})`,
+                  sub: `Tingkat: Kelas ${m.kelas || '-'} • ${m.kelompok || 'Umum'}`,
+                  tabBtnId: 'tab-admin-mapel-btn',
+                  tbodyId: 'tbodyAdminMapel',
+                  queryToApply: rawQuery.trim()
+                });
+              }
+            });
+
+            (adminDataCache.kelas || []).forEach(k => {
+              const hay = `${k.kode_kelas || ''} ${k.nama_kelas || ''} ${k.tingkat_kelas || ''} ${k.wali_kelas || ''}`.toLowerCase();
+              if (hay.includes(q)) {
+                results.push({
+                  category: 'Master Rombel Kelas',
+                  icon: 'bi-building',
+                  title: `Kelas ${k.nama_kelas} (${k.kode_kelas})`,
+                  sub: `Tingkat: Kelas ${k.tingkat_kelas || '-'} • Wali: ${k.wali_kelas || '-'}`,
+                  tabBtnId: 'tab-admin-kelas-btn',
+                  tbodyId: 'tbodyAdminKelas',
+                  queryToApply: rawQuery.trim()
+                });
+              }
+            });
+
+            (adminDataCache.siswa || []).forEach(s => {
+              const hay = `${s.nis || ''} ${s.nama_lengkap || ''} ${s.kelas || ''} ${s.username || ''}`.toLowerCase();
+              if (hay.includes(q)) {
+                results.push({
+                  category: 'Data Peserta Didik (Siswa)',
+                  icon: 'bi-mortarboard',
+                  title: `${s.nama_lengkap} (NIS: ${s.nis})`,
+                  sub: `Rombel Kelas: ${s.kelas || '-'}`,
+                  tabBtnId: 'tab-admin-siswa-btn',
+                  tbodyId: 'tbodyAdminSiswa',
+                  resetAdminSiswaFilter: true,
+                  queryToApply: rawQuery.trim()
+                });
+              }
+            });
+          } else if (role === 'siswa' && siswaDashboardCache) {
+            (siswaDashboardCache.ujian || []).forEach(u => {
+              const hay = `${u.mapel_induk || ''} ${u.jenis_ujian || ''} ${u.mata_pelajaran || ''}`.toLowerCase();
+              if (hay.includes(q)) {
+                results.push({
+                  category: 'Daftar Ulangan & Ujian',
+                  icon: 'bi-collection-play',
+                  title: `${u.mapel_induk || u.mata_pelajaran} — ${u.jenis_ujian || 'Penilaian'}`,
+                  sub: `Durasi: ${u.durasi_menit} Menit • ${u.jumlah_soal} Soal`,
+                  tabBtnId: 'tab-ujian-btn',
+                  queryToApply: ''
+                });
+              }
+            });
+
+            (siswaDashboardCache.riwayat || []).forEach(r => {
+              const hay = `${r.mapel_induk || ''} ${r.jenis_ujian || ''} ${r.mata_pelajaran || ''} ${r.nilai_akhir || ''} ${r.timestamp || ''}`.toLowerCase();
+              if (hay.includes(q)) {
+                results.push({
+                  category: 'Riwayat Nilai Saya',
+                  icon: 'bi-award',
+                  title: `${r.mapel_induk || r.mata_pelajaran} — ${r.jenis_ujian || 'Ujian'}`,
+                  sub: `Waktu: ${r.timestamp || '-'} • Nilai: ${r.nilai_akhir !== null ? r.nilai_akhir : '-'}`,
+                  tabBtnId: 'tab-riwayat-btn',
+                  tbodyId: 'tbodyRiwayatSiswa',
+                  queryToApply: rawQuery.trim()
+                });
+              }
+            });
+          }
+        }
+
+        globalSearchResultsCache = results.slice(0, 18);
+
+        if (globalSearchResultsCache.length === 0) {
+          dropdown.innerHTML = `
+            <div class="text-center text-muted py-3 px-2 small">
+              <i class="bi bi-search d-block fs-5 mb-1"></i>
+              Tidak ditemukan menu atau data untuk <strong>"${escapeHtml(rawQuery)}"</strong>
+            </div>`;
+          dropdown.style.display = 'block';
+          return;
+        }
+
+        const grouped = {};
+        globalSearchResultsCache.forEach((item, idx) => {
+          if (!grouped[item.category]) grouped[item.category] = [];
+          grouped[item.category].push({ ...item, _idx: idx });
+        });
+
+        let html = '';
+        Object.keys(grouped).forEach(cat => {
+          html += `<div class="nav-search-cat-title">${escapeHtml(cat)}</div>`;
+          grouped[cat].forEach(item => {
+            html += `
+              <button type="button" class="nav-search-item" onclick="navigateGlobalSearchResult(${item._idx})">
+                <span class="nav-search-item-icon"><i class="bi ${escapeHtml(item.icon)}"></i></span>
+                <div class="min-w-0 flex-grow-1">
+                  <div class="nav-search-item-title text-truncate">${escapeHtml(item.title)}</div>
+                  <div class="nav-search-item-sub text-truncate">${escapeHtml(item.sub)}</div>
+                </div>
+                <i class="bi bi-arrow-return-left text-muted small"></i>
+              </button>`;
+          });
+        });
+
+        dropdown.innerHTML = html;
+        dropdown.style.display = 'block';
+      }
+
+      function navigateGlobalSearchResult(idx) {
+        const item = globalSearchResultsCache[idx];
+        if (!item) return;
+
+        if (item.tabBtnId) {
+          const tabBtn = document.getElementById(item.tabBtnId);
+          if (tabBtn) {
+            bootstrap.Tab.getOrCreateInstance(tabBtn).show();
+          }
+        }
+
+        if (item.resetGuruFilters) {
+          const fMapel = document.getElementById('filterBankMapelInduk');
+          const fJenis = document.getElementById('filterBankJenisUjian');
+          if (fMapel) fMapel.value = 'ALL';
+          if (fJenis) fJenis.value = 'ALL';
+          if (typeof renderTabelBankSoal === 'function') renderTabelBankSoal();
+        }
+
+        if (item.resetRekapFilters) {
+          const fMapel = document.getElementById('filterRekapMapelInduk');
+          const fJenis = document.getElementById('filterRekapJenis');
+          const fKelas = document.getElementById('filterRekapKelas');
+          const sInput = document.getElementById('searchRekapSiswa');
+          if (fMapel) fMapel.value = 'ALL';
+          if (fJenis) fJenis.value = 'ALL';
+          if (fKelas) fKelas.value = 'ALL';
+          if (sInput) sInput.value = '';
+          if (typeof renderTabelRekapNilai === 'function') renderTabelRekapNilai();
+        }
+
+        if (item.resetAdminSiswaFilter) {
+          const fKelas = document.getElementById('filterAdminKelasSiswa');
+          const sInput = document.getElementById('searchAdminSiswa');
+          if (fKelas) fKelas.value = 'ALL';
+          if (sInput) sInput.value = '';
+          if (typeof renderTabelAdminSiswa === 'function') renderTabelAdminSiswa();
+        }
+
+        if (item.tbodyId) {
+          setTimeout(() => {
+            setTableSearchQuery(item.tbodyId, item.queryToApply || '');
+            const searchEl = document.getElementById(`tblSearch_${item.tbodyId}`);
+            if (searchEl && item.queryToApply) {
+              searchEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+          }, 80);
+        }
+
+        const dropdown = document.getElementById('navGlobalSearchDropdown');
+        if (dropdown) dropdown.style.display = 'none';
+      }
+
+      // Shortcut Ctrl+K dan klik di luar dropdown global search
+      document.addEventListener('keydown', e => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+          if (document.body.classList.contains('exam-security-mode')) return;
+          const nav = document.getElementById('mainNavbar');
+          const wrap = document.getElementById('navGlobalSearchWrap');
+          const input = document.getElementById('navGlobalSearchInput');
+          if (nav && nav.style.display !== 'none' && wrap && wrap.style.display !== 'none' && input) {
+            e.preventDefault();
+            input.focus();
+            input.select();
+          }
+        } else if (e.key === 'Escape') {
+          const dropdown = document.getElementById('navGlobalSearchDropdown');
+          if (dropdown && dropdown.style.display !== 'none') {
+            dropdown.style.display = 'none';
+          }
+        }
+      });
+
+      document.addEventListener('click', e => {
+        const wrap = document.getElementById('navGlobalSearchWrap');
+        const dropdown = document.getElementById('navGlobalSearchDropdown');
+        if (wrap && dropdown && !wrap.contains(e.target)) {
+          dropdown.style.display = 'none';
+        }
+      });
+    </script>
+  </body>
+
+  </html>
