@@ -3304,7 +3304,46 @@
             </button>
           </form>
 
-          <div class="mt-4 pt-3 border-top text-center">
+          <!-- AKSES CEPAT LOGIN (ADMIN, GURU, SISWA) -->
+          <div class="mt-3 pt-3 border-top">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <span class="small fw-bold text-secondary" style="font-size: 0.74rem; letter-spacing: 0.03em;">
+                <i class="bi bi-lightning-charge-fill text-warning me-1"></i>AKSES CEPAT (1-KLIK LOGIN)
+              </span>
+              <span class="badge bg-primary-subtle text-primary rounded-pill" style="font-size: 0.65rem;">Instant Access</span>
+            </div>
+            <div class="row g-2">
+              <div class="col-4">
+                <button type="button"
+                  class="btn btn-outline-primary w-100 py-2 px-1 rounded-3 d-flex flex-column align-items-center justify-content-center gap-1 shadow-sm"
+                  onclick="handleQuickAccessLogin('admin')"
+                  title="Masuk Cepat sebagai Administrator">
+                  <i class="bi bi-shield-lock-fill fs-5"></i>
+                  <span class="fw-bold" style="font-size: 0.73rem; line-height: 1.1;">Admin</span>
+                </button>
+              </div>
+              <div class="col-4">
+                <button type="button"
+                  class="btn btn-outline-success w-100 py-2 px-1 rounded-3 d-flex flex-column align-items-center justify-content-center gap-1 shadow-sm"
+                  onclick="handleQuickAccessLogin('guru')"
+                  title="Masuk Cepat sebagai Guru">
+                  <i class="bi bi-person-workspace fs-5"></i>
+                  <span class="fw-bold" style="font-size: 0.73rem; line-height: 1.1;">Guru</span>
+                </button>
+              </div>
+              <div class="col-4">
+                <button type="button"
+                  class="btn btn-outline-info w-100 py-2 px-1 rounded-3 d-flex flex-column align-items-center justify-content-center gap-1 shadow-sm"
+                  onclick="handleQuickAccessLogin('siswa')"
+                  title="Masuk Cepat sebagai Siswa">
+                  <i class="bi bi-mortarboard-fill fs-5"></i>
+                  <span class="fw-bold" style="font-size: 0.73rem; line-height: 1.1;">Siswa</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-3 pt-3 border-top text-center">
             <small class="text-muted d-block"><i class="bi bi-shield-check text-success me-1"></i><span id="loginFooterEl">Isolasi Mapel Per
               Rombel Kelas &amp; Anti-Cheat Fullscreen.</span></small>
           </div>
@@ -7573,6 +7612,74 @@
         }
       }
 
+      const QUICK_ACCESS_DEFAULTS = {
+        admin: { user: 'admin', pass: 'admin123', label: 'Administrator' },
+        guru: { user: 'guru_mtk_x', pass: 'guru123', label: 'Guru' },
+        siswa: { user: 'siswa_x1', pass: 'siswa123', label: 'Siswa' }
+      };
+
+      function applyAuthenticatedSession(res) {
+        currentUser = {
+          token: 'TOKEN-' + Date.now(),
+          role: res.role,
+          data: res.data,
+          loginAt: new Date().toISOString()
+        };
+        localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(currentUser));
+        const formEl = document.getElementById('formLogin');
+        if (formEl) formEl.reset();
+        updateNavbarProfile();
+
+        if (res.role === 'admin') {
+          switchView('viewAdminDashboard');
+          loadAdminDashboard();
+        } else if (res.role === 'guru') {
+          switchView('viewGuruDashboard');
+          loadGuruDashboard();
+        } else {
+          switchView('viewSiswaDashboard');
+          loadSiswaDashboard();
+        }
+      }
+
+      async function handleQuickAccessLogin(roleKey) {
+        const preset = QUICK_ACCESS_DEFAULTS[roleKey] || QUICK_ACCESS_DEFAULTS.siswa;
+        const userEl = document.getElementById('loginUsername');
+        const passEl = document.getElementById('loginPassword');
+        if (userEl) userEl.value = preset.user;
+        if (passEl) passEl.value = preset.pass;
+
+        showLoader(`Masuk cepat sebagai ${preset.label}...`);
+        try {
+          let res = await callServer('loginUser', preset.user, preset.pass);
+          if (!res || res.status !== 'success') {
+            try {
+              const quickRes = await callServer('quickLoginByRole', roleKey);
+              if (quickRes && quickRes.status === 'success') {
+                res = quickRes;
+              }
+            } catch (e) {}
+          }
+          hideLoader();
+
+          if (!res || res.status !== 'success') {
+            Swal.fire(
+              'Akses Cepat',
+              (res && res.message)
+                ? res.message
+                : `Akun default ${preset.label} (${preset.user}) belum ditemukan atau telah diubah di Spreadsheet. Silakan sesuaikan username/password pada form.`,
+              'info'
+            );
+            return;
+          }
+
+          applyAuthenticatedSession(res);
+        } catch (err) {
+          hideLoader();
+          Swal.fire('Server Error', err.message, 'error');
+        }
+      }
+
       async function handleLoginSubmit(e) {
         e.preventDefault();
         const username = document.getElementById('loginUsername').value.trim();
@@ -7588,26 +7695,7 @@
             return;
           }
 
-          currentUser = {
-            token: 'TOKEN-' + Date.now(),
-            role: res.role,
-            data: res.data,
-            loginAt: new Date().toISOString()
-          };
-          localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(currentUser));
-          document.getElementById('formLogin').reset();
-          updateNavbarProfile();
-
-          if (res.role === 'admin') {
-            switchView('viewAdminDashboard');
-            loadAdminDashboard();
-          } else if (res.role === 'guru') {
-            switchView('viewGuruDashboard');
-            loadGuruDashboard();
-          } else {
-            switchView('viewSiswaDashboard');
-            loadSiswaDashboard();
-          }
+          applyAuthenticatedSession(res);
         } catch (err) {
           hideLoader();
           Swal.fire('Server Error', err.message, 'error');

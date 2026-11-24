@@ -831,6 +831,75 @@ function loginUser(username, password) {
 }
 
 /**
+ * Akses Cepat Login (1-Klik) berdasarkan Role ('admin', 'guru', 'siswa')
+ * Mengambil akun pertama yang tersedia pada tabel DATA_ADMIN, DATA_GURU, atau DATA_SISWA.
+ */
+function quickLoginByRole(roleName) {
+  try {
+    const role = String(roleName || "").trim().toLowerCase();
+    if (role === "admin") {
+      const dataAdmin = getSheetData_(SHEET_NAMES.ADMIN);
+      if (dataAdmin.length === 0) {
+        return { status: "error", message: "Data Administrator belum ada di sheet DATA_ADMIN." };
+      }
+      const foundAdmin = dataAdmin[0];
+      return {
+        status: "success",
+        role: "admin",
+        data: {
+          id: foundAdmin.id_admin,
+          nama: foundAdmin.nama_lengkap,
+          username: foundAdmin.username
+        }
+      };
+    }
+
+    if (role === "guru") {
+      const dataGuru = getSheetData_(SHEET_NAMES.GURU);
+      if (dataGuru.length === 0) {
+        return { status: "error", message: "Data Guru belum ada di sheet DATA_GURU." };
+      }
+      const foundGuru = dataGuru[0];
+      const mapelList = parseGuruMapelList_(foundGuru.mata_pelajaran);
+      return {
+        status: "success",
+        role: "guru",
+        data: {
+          id: foundGuru.nip_atau_id,
+          nama: foundGuru.nama_lengkap,
+          mapel: foundGuru.mata_pelajaran,
+          mapel_list: mapelList,
+          username: foundGuru.username
+        }
+      };
+    }
+
+    if (role === "siswa") {
+      const dataSiswa = getSheetData_(SHEET_NAMES.SISWA);
+      if (dataSiswa.length === 0) {
+        return { status: "error", message: "Data Siswa belum ada di sheet DATA_SISWA." };
+      }
+      const foundSiswa = dataSiswa[0];
+      return {
+        status: "success",
+        role: "siswa",
+        data: {
+          nis: foundSiswa.nis,
+          nama: foundSiswa.nama_lengkap,
+          kelas: foundSiswa.kelas,
+          tingkat: extractStudentGradeLevel_(foundSiswa.kelas),
+          username: foundSiswa.username
+        }
+      };
+    }
+
+    return { status: "error", message: "Role tidak dikenali." };
+  } catch (err) {
+    return { status: "error", message: "Gagal memproses akses cepat: " + err.message };
+  }
+}
+
+/**
  * FITUR BARU V2.5: Mengubah Password Siswa dari Halaman Pengaturan Profil Siswa
  */
 function ubahPasswordSiswa(payload) {
