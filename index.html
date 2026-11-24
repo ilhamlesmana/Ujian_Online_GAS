@@ -6161,7 +6161,7 @@
           });
         }
 
-        // 2. Jika di-hosting di Vercel / Netlify / Domain Sendiri, gunakan fetch POST text/plain (bebas CORS preflight)
+        // 2. Jika di-hosting di Vercel / Netlify / Domain Sendiri:
         let apiUrl = getConfiguredGasApiUrl();
         if (!apiUrl) {
           if (funcName === 'getPengaturanWebsite') {
@@ -6175,24 +6175,74 @@
           showLoader('Menghubungkan ke server Spreadsheet...');
         }
 
-        const response = await fetch(apiUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'text/plain;charset=utf-8'
-          },
-          body: JSON.stringify({
-            action: funcName,
-            args: args
-          }),
-          redirect: 'follow'
+        const payloadStr = JSON.stringify({
+          action: funcName,
+          args: args,
+          gasUrl: apiUrl
         });
 
-        if (!response.ok) {
-          throw new Error(`HTTP Error ${response.status} saat menghubungi Google Apps Script.`);
+        // 2A. Utamakan memanggil Same-Origin Vercel Serverless Proxy (/api/gas)
+        //     agar 100% bebas blokir CORS, 302 redirect Google, maupun AdBlocker browser!
+        if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+          try {
+            const proxyResp = await fetch('/api/gas', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: payloadStr
+            });
+            if (proxyResp.ok) {
+              const contentType = proxyResp.headers.get('content-type') || '';
+              if (contentType.includes('application/json')) {
+                return await proxyResp.json();
+              }
+            }
+          } catch (proxyErr) {
+            // Jika bukan di Vercel (misal dibuka dari Live Server lokal), lanjut ke Direct Fetch di bawah
+          }
         }
 
-        const data = await response.json();
-        return data;
+        // 2B. Fallback Direct Fetch ke Google Apps Script (POST lalu fallback GET jika terkena redirect CORS)
+        try {
+          const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'text/plain;charset=utf-8'
+            },
+            body: JSON.stringify({
+              action: funcName,
+              args: args
+            }),
+            redirect: 'follow'
+          });
+
+          const rawText = await response.text();
+          if (rawText.trim().startsWith('<')) {
+            throw new Error(
+              'Deployment Google Apps Script Anda masih menjalankan kode versi lama. Pastikan code.gs terbaru sudah di-paste ke Apps Script dan di-deploy sebagai "New version / Versi baru" dengan akses "Anyone / Siapa saja".'
+            );
+          }
+          return JSON.parse(rawText);
+        } catch (postErr) {
+          // Fallback terakhir via GET query parameter jika POST terkena CORS redirect 302 di browser
+          const getUrl =
+            apiUrl +
+            (apiUrl.includes('?') ? '&' : '?') +
+            'action=' + encodeURIComponent(funcName) +
+            '&args=' + encodeURIComponent(JSON.stringify(args));
+          const getResp = await fetch(getUrl, {
+            method: 'GET',
+            redirect: 'follow'
+          });
+          const getRaw = await getResp.text();
+          if (getRaw.trim().startsWith('<')) {
+            throw new Error(
+              'Google Apps Script mengembalikan HTML (bukan JSON). Pastikan Anda sudah update code.gs di Editor Apps Script lalu klik Deploy -> Manage Deployments -> Edit -> pilih "New version / Versi baru" -> Deploy.'
+            );
+          }
+          return JSON.parse(getRaw);
+        }
       }
 
       function switchView(viewId) {
