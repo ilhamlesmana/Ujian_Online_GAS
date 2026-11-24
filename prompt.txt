@@ -1,0 +1,281 @@
+================================================================================
+🔥 MASTER PROMPT AI: SISTEM UJIAN ONLINE SEKOLAH DIGITAL (CBT WEB APP PRO V3.0)
+BERBASIS GOOGLE SPREADSHEET & GOOGLE APPS SCRIPT (FULL-STACK SPA)
+================================================================================
+📦 PANDUAN PENGGUNAAN UNTUK PEMBELI PROMPT:
+1. Salin (Copy) seluruh isi prompt di dalam bagian [MULAI SALIN PROMPT DI BAWAH INI]
+   hingga [AKHIR SALINAN PROMPT], lalu tempel (Paste) ke AI Coding Assistant
+   favorit Anda (ChatGPT Plus/o3/GPT-4o, Claude 3.5/3.7 Sonnet, Gemini 2.5 Pro,
+   Cursor, Windsurf, atau Antigravity).
+2. Karena aplikasi ini berskala Enterprise (Full-Stack dengan 3 Portal Role,
+   10 Tabel Database Berelasi, Anti-Cheat Engine, Import/Export Word & PDF),
+   prompt ini dilengkapi dengan **PROTOKOL GENERASI BERTAHAP (MODULAR GENERATION)**
+   agar AI menghasilkan kode 100% utuh tanpa terpotong (`truncated`).
+3. Ikuti panduan instalasi Google Spreadsheet & Google Apps Script yang juga
+   sudah disertakan di bagian akhir dokumen ini.
+================================================================================
+
+
+[MULAI SALIN PROMPT DI BAWAH INI]
+
+# ROLE & PERSONA
+Anda adalah seorang **Principal Full-Stack Web Architect, Senior Google Apps Script Engineer, dan Senior UI/UX Designer**. Tugas Anda adalah membangun aplikasi web **Sistem Ujian Online Sekolah Digital (Computer-Based Test / CBT Web App V3.0)** kelas produksi (production-ready, zero-bug, high-performance) yang menggunakan **Google Spreadsheet sebagai Relational Database** dan **Google Apps Script (`HtmlService`)** sebagai Backend & Frontend Single-Page Application (SPA).
+
+---
+
+# ATURAN KERAS PENULISAN KODE (STRICT CODING RULES)
+1. **DILARANG KERAS MEMOTONG KODE**: Jangan pernah menulis komentar seperti `// ... kode lainnya ...`, `// ... lanjutkan seperti di atas ...`, atau `<!-- tambahkan sisa elemen di sini -->`. Tulis seluruh fungsi, HTML, CSS, dan JavaScript secara lengkap dan fungsional.
+2. **ARSITEKTUR 2 FILE UTAMA**:
+   - File 1: `code.gs` (Backend Google Apps Script, Auto-Database Generator, CRUD API, Auth, Relational Engine, Anti-Cheat Logger, Scoring Engine).
+   - File 2: `index.html` (Frontend Single-Page Application lengkap dengan CSS Bento Design System, Dark/Light Theme Ripple Engine, Mobile Responsive Card-Table Engine, dan seluruh logika JavaScript Client-Side).
+3. **ZERO EXTERNAL SERVER DEPENDENCY**: Seluruh data disimpan di Google Spreadsheet menggunakan `SpreadsheetApp` dan `LockService` (untuk mencegah *race condition* saat ratusan siswa submit ujian bersamaan).
+4. **DATA INTEGRITY & ISOLATION**:
+   - Mendukung seluruh jenjang pendidikan dari **Kelas 1 s/d Kelas 12** (SD/MI, SMP/MTs, SMA/SMK/MA) baik format angka (`1`–`12`) maupun Romawi (`I`–`XII`) melalui fungsi kanonik `normalizeGradeLevel_()`.
+   - **Isolasi Penuh Per Guru & Rombel Kelas**: Guru hanya dapat melihat, mengelola bank soal, membuka jadwal ujian, dan melihat rekap nilai untuk **Mata Pelajaran dan Rombel Kelas yang diampunya saja** (mendukung penugasan seluruh tingkat seperti `Matematika (Kelas 10)` maupun rombel spesifik seperti `Matematika (Kelas 10-A + 10-B)`).
+   - **Isolasi Siswa**: Siswa yang login otomatis hanya melihat daftar ujian yang sesuai dengan tingkat kelas / rombelnya dan belum pernah dikerjakan.
+
+---
+
+# SPESIFIKASI ARSITEKTUR DATABASE GOOGLE SPREADSHEET (10 SHEET BERELASI)
+
+Buat fungsi otomatis bernama `setupDatabaseDanDataAwal()` dan `ensureSheetsExist_(ss)` di dalam `code.gs` yang secara otomatis membuat, memvalidasi header kolom, memberi warna header (`#dbeafe`, teks `#1e3a8a`, bold), dan mengisi *seed data* awal untuk **10 Sheet** berikut:
+
+1. **`DATA_ADMIN`**
+   - Kolom Header: `id_admin | nama_lengkap | username | password`
+   - Seed Awal: `ADM-01 | Administrator | admin | admin123`
+   - Fungsi: Menyimpan akun Super Administrator untuk mengelola seluruh master data dan identitas website.
+
+2. **`MASTER_MAPEL`**
+   - Kolom Header: `kode_mapel | nama_mapel | kelas | label_mapel_kelas | kelompok`
+   - Contoh Seed: `MP-10-MTK | Matematika | 10 | Matematika (Kelas 10) | Umum / Wajib` (Sediakan seed untuk Kelas 1 s/d Kelas 12).
+   - Fungsi: Master referensi mata pelajaran per tingkat kelas yang terhubung ke penugasan Guru dan Bank Soal.
+
+3. **`MASTER_JENIS_PENILAIAN`**
+   - Kolom Header: `kode_jenis | nama_jenis | keterangan | pemilik_guru | mapel_relasi`
+   - Contoh Seed: `JP-01 | Ulangan Harian 1 | Penilaian Harian Bab 1 | guru_mtk_x | Matematika (Kelas 10)`
+   - Fungsi: Kategori penilaian (UH, PTS, PAS, Ujian Sekolah, Kuis) yang **terisolasi secara privat per akun guru** (`pemilik_guru`) dan berelasi ke mapel tertentu (`mapel_relasi` atau `SEMUA`).
+
+4. **`DATA_KELAS`**
+   - Kolom Header: `kode_kelas | nama_kelas | tingkat_kelas | wali_kelas`
+   - Contoh Seed: `KLS-01 | 10-A | 10 | Budi Santoso, S.Pd.`
+   - Fungsi: Master rombel kelas (Kelas 1 s/d 12) yang berelasi langsung dengan penempatan siswa (`DATA_SISWA`) dan pemilihan rombel spesifik pada penugasan guru (`DATA_GURU`).
+
+5. **`DATA_GURU`**
+   - Kolom Header: `nip_atau_id | nama_lengkap | mata_pelajaran | username | password`
+   - Contoh Seed: `198501012010011001 | Budi Santoso, S.Pd. | Matematika (Kelas 10-A + 10-B), Fisika (Kelas 10) | guru_mtk_x | guru123`
+   - Fungsi: Menyimpan akun tenaga pendidik beserta daftar mapel & rombel kelas yang diampu (dipisahkan koma).
+
+6. **`DATA_SISWA`**
+   - Kolom Header: `nis | nama_lengkap | kelas | username | password`
+   - Contoh Seed: `2026001 | Ahmad Fauzi | 10-A | siswa_x1 | siswa123`
+   - Fungsi: Menyimpan akun peserta didik beserta NIS dan rombel kelasnya.
+
+7. **`BANK_SOAL`**
+   - Kolom Header: `id_soal | mata_pelajaran | pertanyaan | id_gambar | id_suara | opsi_a | opsi_b | opsi_c | opsi_d | opsi_e | kunci_jawaban`
+   - Format `mata_pelajaran`: `"<Label Mapel & Kelas> - <Jenis Penilaian>"`, contoh: `"Matematika (Kelas 10) - Ulangan Harian 1"`.
+   - Fungsi: Menyimpan seluruh butir soal pilihan ganda (mendukung 2 s/d 5 opsi A–E, gambar dari Google Drive ID/URL, dan audio/listening dari Google Drive ID/URL).
+
+8. **`PENGATURAN_UJIAN`**
+   - Kolom Header: `mata_pelajaran | status_ujian | durasi_menit | acak_soal | acak_jawaban | tampilkan_nilai`
+   - Nilai Kolom:
+     - `status_ujian`: `OPEN` atau `CLOSE`
+     - `durasi_menit`: Angka menit (misal `45`, `60`, `90`)
+     - `acak_soal`: `YA` atau `TIDAK`
+     - `acak_jawaban`: `YA` atau `TIDAK`
+     - `tampilkan_nilai`: `YA` (siswa langsung melihat nilai & pembahasan setelah submit) atau `TIDAK` (nilai disembunyikan dari siswa sampai guru membukanya).
+
+9. **`HASIL_UJIAN`**
+   - Kolom Header: `timestamp | nis | nama_lengkap | kelas | mata_pelajaran | jawaban_siswa | nilai_akhir | catatan_kecurangan`
+   - Format `jawaban_siswa`: JSON string `{"SOAL-1001":"B","SOAL-1002":"C"}`
+   - Format `catatan_kecurangan`: JSON array string berisi riwayat pelanggaran anti-cheat lengkap dengan `kategori`, `deskripsi`, `detail`, `waktu`, dan `soal_no`.
+
+10. **`PENGATURAN_WEBSITE`**
+    - Kolom Header: `kunci | nilai`
+    - Key-Value Default:
+      - `nama_website`: `"Sistem Ujian Online Sekolah Digital"`
+      - `subtitle_website`: `"Portal Akademik & Evaluasi Digital"`
+      - `logo_url`: `""` (Mendukung Base64 hasil upload langsung dari web, URL gambar publik, atau Google Drive File ID/Link dengan multi-step fallback otomatis)
+      - `login_judul`: `"CBT Sekolah Digital"`
+      - `login_subtitle`: `"Terintegrasi Relasi Tingkat Kelas (Kelas 1 s/d Kelas 12) & Multi-Evaluasi"`
+      - `login_footer`: `"Isolasi Mapel Per Rombel Kelas & Anti-Cheat Fullscreen."`
+      - `login_bg_gradient`: `"linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #0ea5e9 100%)"`
+
+---
+
+# SPESIFIKASI FUNGSI BACKEND (`code.gs`)
+
+Implementasikan seluruh fungsi backend berikut di `code.gs` dengan pemrosesan cepat (in-memory caching `_cachedSs`, batch `getValues()` / `setValues()`, dan `LockService.getScriptLock()`):
+
+1. **Core & Helper Functions + Hybrid REST API (`doGet` & `doPost`)**:
+   - `doGet(e)`: Render `index.html` sebagai SPA dengan viewport mobile-first & `XFrameOptionsMode.ALLOWALL`, atau layani request JSON jika terdapat query `?action=...`.
+   - `doPost(e)` & `handleExternalApiRequest_(action, args)`: **Endpoint REST API Hybrid (Bebas CORS)** menggunakan `ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON)` agar `index.html` dapat di-hosting secara mandiri di **Vercel, Netlify, Cloudflare Pages, atau Custom Domain** selain di URL Google Apps Script.
+   - `getSpreadsheet_(forceCheckSchema)` & `ensureSheetsExist_(ss)`: Koneksi database otomatis (mendukung `SPREADSHEET_ID` maupun `SpreadsheetApp.getActiveSpreadsheet()`).
+   - `normalizeGradeLevel_(rawVal)`: Mengonversi `"Kelas X-IPA-1"`, `"10-A"`, `"XII"`, `"7B"` menjadi tingkat kelas kanonik `"1"` s/d `"12"`.
+   - `parseGuruMapelSpec_(specStr)` & `isStudentClassAllowedForMapelSpec_(studentClassRaw, mapelSpecStr)`: Engine pencocokan cerdas yang menentukan apakah seorang siswa di rombel tertentu (misal `10-PPLG-1`) berhak mengakses paket ujian dari guru tertentu.
+   - `resolveGoogleDriveMediaUrl_(idOrUrl, type)`: Mengonversi ID atau tautan share Google Drive menjadi direct URL gambar (`lh3.googleusercontent.com/d/<ID>`) atau audio stream.
+   - `splitMapelAndJenis_(paketLengkap)`: Memisahkan `"Matematika (Kelas 10) - Ulangan Harian 1"` menjadi `{ mapel_induk, jenis_ujian }`.
+
+2. **Authentication & Profile API**:
+   - `loginUser(username, password)`: Autentikasi multi-role otomatis (mengecek `DATA_ADMIN`, `DATA_GURU`, dan `DATA_SISWA`). Mengembalikan role (`admin`, `guru`, atau `siswa`), profil lengkap, daftar mapel/rombel ampuan (untuk guru), dan pengaturan website.
+   - `ubahPasswordSiswa(payload)` & `ubahPasswordGuru(payload)`: Validasi password lama dan simpan password baru.
+
+3. **Portal Siswa API**:
+   - `getDashboardSiswa(nis, kelasSiswa)`: Mengambil daftar paket ujian yang berstatus `OPEN` dan sesuai dengan kelas/rombel siswa, serta mengecek ujian mana yang sudah dikerjakan beserta riwayat nilai (menghormati flag `tampilkan_nilai`).
+   - `getSoalUjian(mataPelajaran)`: Mengambil daftar butir soal untuk ujian aktif. Jika `acak_soal === "YA"`, acak urutan soal dengan Fisher-Yates Shuffle. Jika `acak_jawaban === "YA"`, acak urutan opsi jawaban A–E tanpa merusak pemetaan kunci jawaban! **Jangan kirim `kunci_jawaban` ke client saat ujian berlangsung.**
+   - `submitUjian(payload)`: Menggunakan `LockService`. Mencegah double-submit, menghitung skor (`0`–`100`) secara akurat di server berdasarkan kunci jawaban di `BANK_SOAL`, menyimpan rekaman ke `HASIL_UJIAN` beserta JSON `catatan_kecurangan`, mengirim email notifikasi opsional ke guru, dan mengembalikan ringkasan hasil.
+   - `getDetailRiwayatUjian(nis, mataPelajaran)`: Mengambil detail pembahasan per butir soal (pertanyaan, jawaban siswa, kunci jawaban yang benar, status benar/salah) hanya jika `tampilkan_nilai === "YA"`.
+
+4. **Portal Guru API (Terisolasi Per Guru)**:
+   - `getDashboardGuru(guruUsername)`: Mengambil khusus data milik guru tersebut: daftar `allowed_mapel`, `allowed_rombels`, `master_mapel_guru`, `master_jenis_penilaian` (khusus milik guru tersebut), `bank_soal`, `pengaturan_ujian`, `hasil_ujian`, dan `siswa_ampuan` (daftar seluruh siswa di rombel yang diampu guru tersebut untuk mendeteksi siapa yang **Belum Mengerjakan**).
+   - `simpanSoal(payload)` & `simpanSoalBatch(payload)`: Mendukung edit 1 soal maupun **Batch Input / Import puluhan soal sekaligus** dalam satu panggilan `setValues()` cepat, serta otomatis membuat baris di `PENGATURAN_UJIAN` jika paket ujian baru belum terdaftar.
+   - `hapusSoal(idSoal, guruUsername)`: Menghapus soal dengan validasi kepemilikan mapel guru.
+   - `updatePengaturanUjian(payload)`: Mengubah status `OPEN`/`CLOSE`, durasi menit, acak soal, acak opsi, dan visibilitas nilai.
+   - `simpanMasterJenisPenilaian(payload)` & `hapusMasterJenisPenilaian(kodeJenis, guruUsername)`: CRUD jenis penilaian privat milik guru.
+   - `hapusHasilUjianSiswa(timestamp, nis, mataPelajaran, guruUsername)`: Fitur **Reset Ujian Siswa** agar siswa yang bermasalah/remedial dapat mengerjakan ujian ulang.
+
+5. **Portal Administrator API**:
+   - `getDashboardAdmin()`: Mengambil seluruh data `guru`, `siswa`, `kelas`, `master_mapel`, statistik total, dan `website_settings`.
+   - `simpanDataGuru(payload)` & `hapusDataGuru(nip)`: CRUD akun guru lengkap dengan sinkronisasi otomatis ke `MASTER_MAPEL`.
+   - `simpanDataMapel(payload)` & `hapusDataMapel(kodeMapel)`: CRUD `MASTER_MAPEL` lengkap dengan pembaruan relasi pada data guru jika label mapel berubah.
+   - `simpanDataKelas(payload)` & `hapusDataKelas(kodeKelas)`: CRUD `DATA_KELAS` (Kelas 1 s/d 12) lengkap dengan pembaruan otomatis nama rombel siswa jika nama kelas diubah, serta proteksi hapus jika kelas masih memiliki siswa aktif.
+   - `simpanDataSiswa(payload)` & `hapusDataSiswa(nis)`: CRUD akun siswa.
+   - `getPengaturanWebsite()` & `simpanPengaturanWebsite(payload)`: Membaca dan menyimpan kustomisasi judul, subtitle, logo (Base64/Drive/URL), dan tema halaman login.
+
+---
+
+# SPESIFIKASI FRONTEND & SENIOR UI/UX (`index.html`)
+
+Bangun antarmuka pengguna modern di dalam `index.html` menggunakan **Bootstrap 5.3.2, Bootstrap Icons 1.11.3, Plus Jakarta Sans & JetBrains Mono, SweetAlert2, Mammoth.js (untuk Import Word `.docx`), SheetJS/XLSX (untuk Export Excel `.xlsx`), dan jsPDF (untuk Export PDF vektor A4)**.
+
+### 1. Desain Visual Bento Grid & Dark/Light Mode Elegan
+- **Tema Halaman Login (`#viewLogin`)**: Kartu login glassmorphism bersih di tengah layar dengan background gradient dinamis sesuai `PENGATURAN_WEBSITE`, logo sekolah adaptif, fitur show/hide password, dan **Auto-Resume Session** (`localStorage`) yang menjaga pengguna tetap berada di halaman terakhir saat browser di-refresh.
+- **Bento App Shell (Dashboard Siswa, Guru, Admin)**:
+  - **Greeting Header (`.bento-welcome-row`)**: Menampilkan judul setiap halaman secara jelas (contoh: *"Welcome, Ahmad Fauzi!"* beserta subtitle *"NIS: 2026001 | Rombel Kelas: X-IPA-1"*, atau judul spesifik di setiap sub-menu seperti *"Bank Soal Saya"*, *"Jadwal & Jenis Penilaian"*, *"Rekap Nilai Siswa"*, *"Manajemen Akun Guru"*, dll.).
+  - **Bento Overview Grid**: Kartu profil & shield indikator di kiri, 4 kartu statistik (2x2 di HP, 4 kolom di Desktop) + Hero Banner bergradasi Purple/Magenta dengan efek 3D Orbs interaktif di kanan, serta daftar cepat (*Quick List*) dengan pencarian instan di bagian bawah dashboard.
+  - **Harmonisasi Dark Mode & Light Mode**: Gunakan CSS Variables semantik (`--bento-bg`, `--bento-surface`, `--bento-card`, `--bento-input`, `--bento-border`, `--bento-text`, `--bento-text-muted`, `--bento-accent`) dan pastikan seluruh `.badge`, `.alert`, `.table-modern`, `.modal-content`, `.form-control`, dan `.btn` memiliki kontras warna sempurna di Dark Mode tanpa warna yang bertabrakan.
+  - **Animasi Pergantian Tema**: Gunakan View Transitions API (`document.startViewTransition`) dengan efek lingkaran (*circular ripple*) dari posisi tombol tema di Navbar.
+
+### 2. Responsive Mobile-First & Native App Experience (HP, Tablet, Desktop)
+- **Fixed Bottom Navigation Bar di HP (`<= 767.98px`)**: Pada layar HP, sidebar kiri otomatis bertransformasi menjadi *Bottom Navigation Bar* bergaya aplikasi native iOS/Android dengan ikon dan label singkat (`data-mobile-label`), sementara kartu profil di dashboard berubah menjadi kartu profil horizontal kompak (`.bento-mobile-user-card`).
+- **100% Anti-Overflow di Layar HP**:
+  - Gunakan `grid-template-columns: minmax(0, 1fr) !important` pada `.bento-app-shell` dan `.bento-overview-grid` ketika di tablet/HP agar elemen lebar di dalamnya tidak pernah mendorong halaman melewati lebar layar HP (`100vw`).
+  - Semua `.badge`, `.font-monospace`, `code`, dan tombol di dalam kartu tabel mobile wajib memiliki `white-space: normal !important; word-break: break-word !important; overflow-wrap: anywhere !important; max-width: 100% !important;`.
+- **Transformasi Tabel ke Mode Kartu Terstruktur di HP**:
+  - Seluruh 10 tabel (`#tbodyAdminGuru`, `#tbodyAdminMapel`, `#tbodyAdminKelas`, `#tbodyAdminSiswa`, `#tbodyBankSoal`, `#tbodyPengaturanUjian`, `#tbodyRekapNilai`, `#tbodyMasterMapelGuru`, `#tbodyMasterJenisPenilaian`, `#tbodyRiwayatSiswa`) pada layar HP otomatis dirender sebagai **Kartu Vertikal Terstruktur** dengan 4 peran sel (`data-m-role`):
+    1. `index`: Header kartu (`URUTAN DATA` di kiri, badge `#1`, `#2` di kanan).
+    2. `kv`: Grid 2 kolom (`92px minmax(0, 1fr)`) untuk pasangan label-nilai singkat.
+    3. `stacked`: Blok penuh 100% lebar dengan kotak berlatar halus untuk konten panjang (Pertanyaan & Opsi Jawaban, Mapel Ampuan, Nama Mata Pelajaran, Relasi, Status Combobox, Input Durasi).
+    4. `action`: Baris tombol aksi di bagian bawah kartu.
+  - Sediakan juga tombol toggle **"Mode Tabel / Mode Kartu"** di setiap tabel jika pengguna di HP ingin beralih ke tabel geser horizontal (`mobile-table-scroll-mode`).
+
+### 3. Universal Table Search, Pagination & Global Navbar Smart Search (`Ctrl+K`)
+- **Per-Table Search & Pagination Engine**: Setiap tabel secara otomatis dilengkapi bar kontrol di bagian atas yang berisi dropdown jumlah baris (`5`, `10`, `25`, `50`, `100`, `Semua`), **input pencarian real-time khusus tabel tersebut** beserta tombol clear (`X`), indikator jumlah data, dan tombol navigasi halaman di bagian bawah.
+- **Global Navbar Smart Search (`#navGlobalSearchInput`)**:
+  - Terletak di Navbar utama (dengan shortcut keyboard `Ctrl+K` / `Cmd+K` dan tombol kaca pembesar di HP).
+  - Saat pengguna mengetik kata kunci, tampilkan dropdown pintar yang memindai seluruh data pada role aktif (Ujian, Riwayat Nilai, Bank Soal, Jadwal, Rekap Nilai Siswa, Master Mapel, Guru, Kelas, Siswa).
+  - Ketika hasil pencarian diklik, aplikasi otomatis berpindah ke tab yang sesuai dan memfilter tabel terkait!
+  - **Wajib Disembunyikan Saat Mode Ujian**: Saat siswa berada di halaman Konfirmasi Ujian (`#viewKonfirmasiUjian`) atau Lembar Ujian Aktif (`#viewHalamanUjian`), sembunyikan fitur Global Search di Navbar (`display: none !important`) agar siswa fokus penuh pada ujian.
+
+### 4. Fitur Unggulan Portal Guru: Import & Export Bank Soal (Word `.docx` & PDF A4)
+- **Batch Input & Import Soal dari Word (`.docx`)**:
+  - Guru dapat menambahkan banyak soal sekaligus melalui form dinamis atau mengunggah file Microsoft Word (`.docx`) menggunakan `mammoth.extractRawText`.
+  - Parser cerdas otomatis mengenali nomor soal (`1.`, `2.`), teks pertanyaan multi-baris, tag opsional `Gambar: <ID/URL>` dan `Suara: <ID/URL>`, pilihan jawaban `A.` s/d `E.`, serta `Kunci: A` (atau `Jawaban: A`).
+- **Export Bank Soal ke Microsoft Word (`.docx`) 100% Valid OpenXML**:
+  - Menyertakan kop sekolah dari `PENGATURAN_WEBSITE`, judul dokumen, metadata filter aktif (Mata Pelajaran & Kelas, Jenis Penilaian, Guru Pengampu, NIP/ID, Jumlah Soal, Tanggal Unduh), serta daftar soal, pilihan jawaban A–E, dan kunci jawaban yang rapi.
+  - **PENTING**: Hasilkan file `.docx` menggunakan generator ZIP OpenXML murni dengan kompresi `CompressionStream('deflate-raw')` (Method 8), MS-DOS timestamp valid, struktur paragraf `<w:p>` standar, `word/styles.xml`, `docProps/core.xml`, dan `docProps/app.xml` agar 100% dapat dibuka di semua versi Microsoft Word Desktop tanpa peringatan *unreadable content*.
+  - Format hasil export Word juga kompatibel 100% untuk di-import ulang ke aplikasi.
+- **Export Bank Soal ke PDF (`.pdf`) Siap Cetak**:
+  - Menggunakan `jsPDF` untuk menghasilkan dokumen PDF vektor ukuran A4 portrait dengan kop sekolah, kotak metadata, penomoran soal, opsi jawaban A–E, dan kunci jawaban yang otomatis menangani *page-break* antar halaman.
+- **Export Rekap Nilai Siswa ke Excel (`.xlsx`) / CSV & Cetak Print**:
+  - Tabel Rekap Nilai menampilkan baik siswa yang **Sudah Mengerjakan** maupun siswa di rombel ampuan yang **Belum Mengerjakan** (lengkap dengan filter Mapel, Jenis Penilaian, dan Rombel Kelas).
+  - Menyediakan tombol **Export Excel/CSV** (menggunakan `XLSX.utils.aoa_to_sheet` lengkap dengan kop sekolah dan catatan pengawasan) serta tombol **Print Rekap** dengan layout cetak A4 khusus (`#printOnlyRekapArea`).
+
+### 5. Sistem Keamanan Ujian Berlapis (Multi-Layer Anti-Cheat Engine)
+Saat siswa mengerjakan ujian di `#viewHalamanUjian`:
+1. **Wajib Mode Layar Penuh (Fullscreen Lock)**: Jika siswa keluar dari Fullscreen (`fullscreenchange`) atau mengecilkan jendela (`resize`), lembar soal langsung ditutupi oleh `#fullscreenBlockerOverlay` + efek blur (`exam-blur-shield`) dan dicatat sebagai pelanggaran.
+2. **Deteksi Pindah Tab / Aplikasi / Split-Screen**: Mendeteksi `visibilitychange` dan `window.blur` (termasuk jika siswa membuka tab browser lain, berpindah aplikasi di HP, atau mengklik iframe eksternal).
+3. **Blokir Shortcut & Screenshot**: Memblokir dan mencatat percobaan `PrintScreen`, `Win+Shift+S`, `Ctrl+C`, `Ctrl+V`, `Ctrl+U`, `Ctrl+S`, `Ctrl+P`, `F12`, `Ctrl+Shift+I/J/C`, serta klik kanan (`contextmenu`).
+4. **Deteksi Ekstensi AI / Otomasi**: Memindai DOM untuk mendeteksi injeksi ekstensi pihak ketiga yang mencurigakan selama ujian.
+5. **Log Pelanggaran Real-Time ke Server**: Setiap pelanggaran menyimpan kategori, deskripsi, detail aksi, waktu kejadian, dan nomor soal yang sedang dibuka, lalu dikirim bersama jawaban siswa saat submit. Di halaman Rekap Nilai Guru, siswa yang melanggar ditandai dengan tombol merah **"<N> Kecurangan (Detail)"** yang membuka modal rincian pelanggaran per poin.
+6. **Tombol "Perbarui / Muat Ulang Soal" Saat Ujian Berlangsung**: Memungkinkan siswa memuat koreksi teks soal atau tambahan opsi jawaban dari guru secara live di tengah ujian tanpa kehilangan jawaban yang sudah dipilih maupun sisa waktu timer.
+
+---
+
+# PROTOKOL GENERASI BERTAHAP (AGAR KODE 100% LENGKAP & TIDAK TERPOTONG)
+
+Karena keseluruhan aplikasi ini sangat komprehensif, **JANGAN meringkas kode**. Hasilkan kode dalam **4 Tahap Berurutan**. Pada akhir setiap tahap, berhenti dan tunggu instruksi saya (`"Lanjut Tahap berikutnya"`) sebelum melanjutkan:
+
+- **TAHAP 1 — FULL BACKEND (`code.gs`)**:
+  Tulis seluruh kode `code.gs` secara utuh dari baris pertama hingga terakhir, mencakup: konfigurasi 10 sheet, `setupDatabaseDanDataAwal()`, `doGet()`, helper normalisasi tingkat kelas 1–12 & parser isolasi rombel guru, autentikasi multi-role, API Siswa (dashboard, soal acak, submit dengan `LockService`, pembahasan), API Guru (dashboard terisolasi, CRUD & batch soal, jadwal, jenis penilaian privat, reset nilai), dan API Admin (CRUD guru, mapel, kelas, siswa, pengaturan website).
+
+- **TAHAP 2 — FRONTEND HEAD, DESIGN SYSTEM CSS & BENTO HTML LAYOUT (`index.html` Bagian 1)**:
+  Tulis bagian awal `index.html` dari `<!DOCTYPE html>` hingga seluruh `<style>` (Bento UI, Dark/Light Theme tokens, Responsive Mobile Bottom Nav, Anti-Overflow Mobile Card-Table CSS, Print CSS) beserta struktur HTML untuk Navbar (dengan Global Smart Search & Theme Ripple Toggle), Halaman Login, Portal Siswa, Halaman Konfirmasi & Lembar Ujian Aktif, serta Hasil Ujian.
+
+- **TAHAP 3 — FRONTEND PORTAL GURU, PORTAL ADMIN & SELURUH MODAL DIALOG (`index.html` Bagian 2)**:
+  Lanjutkan penulisan HTML untuk Portal Guru (Dashboard, Bank Soal, Jadwal, Rekap Nilai, Master Mapel & Jenis, Profil), Portal Admin (Dashboard, Manajemen Guru dengan Rombel Picker, Mata Pelajaran, Data Kelas, Siswa, Pengaturan Website dengan Live Preview), dan seluruh Modal Bootstrap (Modal Batch/Import Soal, Tambah Paket, Tambah Jenis, Catatan Kecurangan, Pembahasan, Zoom Gambar, CRUD Guru/Mapel/Kelas/Siswa).
+
+- **TAHAP 4 — FRONTEND JAVASCRIPT ENGINE LENGKAP (`index.html` Bagian 3 - Penutup)**:
+  Tulis seluruh blok `<script>` hingga `</html>` secara lengkap tanpa ada satupun fungsi yang terlewat: State Management, Hybrid `callServer(funcName, ...args)` (otomatis menggunakan `google.script.run` di dalam Apps Script atau `fetch(GAS_WEB_APP_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' } })` saat di-hosting di **Vercel / Netlify / Custom Domain**), Auto-Resume Session, Website Settings & Logo Fallback Engine, Dark/Light View Transition Ripple, Modern Custom Combobox Portal Engine, Anti-Cheat Security Engine, Exam Timer & Live Question Refresh, Word `.docx` OpenXML (DEFLATE Method 8) & PDF A4 (`jsPDF`) Exporter, Mammoth `.docx` Importer, Excel `.xlsx` / CSV Exporter, Admin Rombel Builder, serta Universal Table Search, Pagination & Global Navbar Smart Search (`Ctrl+K`).
+
+**Mulai sekarang dengan langsung menuliskan kode lengkap untuk TAHAP 1 (`code.gs`)!**
+
+[AKHIR SALINAN PROMPT]
+
+
+================================================================================
+📘 LAMPIRAN PANDUAN INSTALASI & DEPLOYMENT (GOOGLE APPS SCRIPT & VERCEL)
+================================================================================
+
+Ikuti 6 langkah mudah berikut untuk menjalankan aplikasi di Google Spreadsheet dan meng-hostingnya di **Vercel**:
+
+1. **Buat Google Spreadsheet Baru**
+   - Buka [https://sheets.new](https://sheets.new) menggunakan akun Google Anda.
+   - Beri nama file Spreadsheet, misalnya: `DATABASE CBT SEKOLAH DIGITAL`.
+   - Salin **ID Spreadsheet** dari URL browser Anda (string panjang di antara `/d/` dan `/edit`).
+
+2. **Buka Editor Google Apps Script**
+   - Di menu atas Google Spreadsheet, klik **Ekstensi (Extensions)** -> **Apps Script**.
+   - Pada file `Kode.gs` (atau `code.gs`), hapus kode default yang ada, lalu tempelkan seluruh kode **`code.gs`** hasil generate dari **TAHAP 1**.
+   - Ganti nilai konstanta `SPREADSHEET_ID` di baris atas dengan ID Spreadsheet Anda (atau biarkan saja karena script otomatis mendeteksi `SpreadsheetApp.getActiveSpreadsheet()`).
+
+3. **Buat File `index.html` (Opsional di Apps Script & Wajib di Folder Vercel)**
+   - Di panel kiri Editor Apps Script, klik tombol **`+` (Tambahkan file)** -> pilih **HTML**.
+   - Ketik nama file: **`index`** (huruf kecil semua, otomatis menjadi `index.html`).
+   - Tempelkan gabungan kode HTML dari **TAHAP 2 + TAHAP 3 + TAHAP 4** secara berurutan ke dalam `index.html`.
+   - Tekan `Ctrl + S` untuk menyimpan seluruh proyek.
+
+4. **Generate 10 Tabel Database Otomatis (1x Klik)**
+   - Di toolbar atas Editor Apps Script, kembali ke file `code.gs`.
+   - Pada dropdown daftar fungsi di sebelah tombol **Jalankan (Run)**, pilih fungsi **`setupDatabaseDanDataAwal`**, lalu klik **Jalankan (Run)**.
+   - Saat muncul pop-up izin akses pertama kali, klik **Tinjau Izin (Review Permissions)** -> Pilih Akun Google Anda -> Klik **Lanjutan (Advanced)** -> Klik **Buka ... (tidak aman) / Go to ...** -> Klik **Izinkan (Allow)**.
+   - Tunggu beberapa detik hingga muncul log `"SUKSES! Database berhasil dibuat!"`. Sekarang Google Spreadsheet Anda sudah memiliki 10 Sheet lengkap dengan header berwarna dan contoh data awal!
+
+5. **Deploy Backend Google Apps Script Sebagai Web App API**
+   - Klik tombol biru **Terapkan (Deploy)** di pojok kanan atas -> pilih **Deployment baru (New deployment)**.
+   - Klik ikon roda gigi di samping *Pilih jenis* -> pilih **Aplikasi web (Web app)**.
+   - Isi konfigurasi berikut:
+     - **Deskripsi**: `CBT Sekolah Digital API V3.0`
+     - **Jalankan sebagai (Execute as)**: **Saya (Me)**
+     - **Siapa yang memiliki akses (Who has access)**: **Siapa saja (Anyone)** *(Wajib "Anyone" agar Vercel dapat mengakses API Spreadsheet tanpa terblokir login Google)*
+   - Klik **Terapkan (Deploy)**, lalu salin **URL Aplikasi Web** yang berakhiran `/exec` (contoh: `https://script.google.com/macros/s/AKfycbx.../exec`).
+
+6. **Hosting Frontend di Vercel (Tanpa Batas Iframe Google & Bisa Pakai Domain Sendiri)**
+   - Buka file `index.html` di komputer Anda, cari baris:
+     ```javascript
+     const GAS_WEB_APP_URL = '';
+     ```
+   - Tempelkan URL Web App `/exec` dari Langkah 5 ke dalamnya:
+     ```javascript
+     const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbx.../exec';
+     ```
+   - Pastikan di dalam folder proyek Anda terdapat file `index.html` dan `vercel.json`.
+   - **Deploy ke Vercel** (Pilih salah satu cara):
+     - **Cara A (Lewat GitHub / Dashboard Vercel)**: Upload folder proyek (`index.html` & `vercel.json`) ke repository GitHub Anda, buka [https://vercel.com/new](https://vercel.com/new), pilih repository tersebut, lalu klik **Deploy**.
+     - **Cara B (Lewat Terminal CLI)**: Jalankan perintah `npx vercel --prod` di terminal folder proyek Anda.
+   - Selesai! Aplikasi Ujian Online Anda kini live di domain Vercel (`https://nama-sekolah-anda.vercel.app`) dengan fitur **Fullscreen Anti-Cheat Native**, kecepatan CDN global, dan database real-time di Google Spreadsheet!
+
+🔑 **Akun Demo Default (Hasil Generate `setupDatabaseDanDataAwal`)**:
+- **Administrator**: Username `admin` | Password `admin123`
+- **Guru Matematika & Fisika**: Username `guru_mtk_x` | Password `guru123`
+- **Siswa Kelas X**: Username `siswa_x1` | Password `siswa123`
+================================================================================
