@@ -6266,6 +6266,82 @@
         return '';
       }
 
+      async function sendApiRequestToGas_(apiUrl, funcName, args, targetSpreadsheetId) {
+        const currentHost = String(window.location.hostname || window.location.host || '').trim().toLowerCase();
+        const payloadObj = {
+          action: funcName,
+          args: args,
+          spreadsheetId: targetSpreadsheetId || '',
+          clientHost: currentHost,
+          gasUrl: apiUrl
+        };
+
+        // 2A. Utamakan memanggil Same-Origin Vercel Serverless Proxy (/api/gas)
+        if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+          try {
+            const proxyResp = await fetch('/api/gas', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(payloadObj)
+            });
+            if (proxyResp.ok) {
+              const contentType = proxyResp.headers.get('content-type') || '';
+              if (contentType.includes('application/json')) {
+                return await proxyResp.json();
+              }
+            }
+          } catch (proxyErr) {
+            // Lanjut ke Direct Fetch di bawah jika bukan di Vercel
+          }
+        }
+
+        // 2B. Fallback Direct Fetch ke Google Apps Script (POST lalu fallback GET)
+        try {
+          const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'text/plain;charset=utf-8'
+            },
+            body: JSON.stringify({
+              action: funcName,
+              args: args,
+              spreadsheetId: targetSpreadsheetId || '',
+              clientHost: currentHost
+            }),
+            redirect: 'follow'
+          });
+
+          const rawText = await response.text();
+          if (rawText.trim().startsWith('<')) {
+            throw new Error(
+              'Deployment Google Apps Script Anda masih menjalankan kode versi lama. Pastikan code.gs terbaru sudah di-paste ke Apps Script dan di-deploy sebagai "New version / Versi baru" dengan akses "Anyone / Siapa saja".'
+            );
+          }
+          return JSON.parse(rawText);
+        } catch (postErr) {
+          const getUrl =
+            apiUrl +
+            (apiUrl.includes('?') ? '&' : '?') +
+            'action=' + encodeURIComponent(funcName) +
+            '&args=' + encodeURIComponent(JSON.stringify(args)) +
+            (targetSpreadsheetId ? '&spreadsheetId=' + encodeURIComponent(targetSpreadsheetId) : '') +
+            (currentHost ? '&clientHost=' + encodeURIComponent(currentHost) : '');
+          const getResp = await fetch(getUrl, {
+            method: 'GET',
+            redirect: 'follow'
+          });
+          const getRaw = await getResp.text();
+          if (getRaw.trim().startsWith('<')) {
+            throw new Error(
+              'Google Apps Script mengembalikan HTML (bukan JSON). Pastikan Anda sudah update code.gs di Editor Apps Script lalu klik Deploy -> Manage Deployments -> Edit -> pilih "New version / Versi baru" -> Deploy.'
+            );
+          }
+          return JSON.parse(getRaw);
+        }
+      }
+
       async function callServer(funcName, ...args) {
         // 1. Jika dibuka langsung dari URL Google Apps Script, gunakan google.script.run asli
         if (isNativeGasEnvironment()) {
@@ -6290,90 +6366,40 @@
           showLoader('Menghubungkan ke server Spreadsheet...');
         }
 
+        // Kirim request ke server bersama domain website saat ini (clientHost).
+        // Jika domain website ini SUDAH PERNAH diverifikasi 1x sebelumnya, server otomatis
+        // mengenali domain ini dari kolom `domain_website` di sheet DATA_PEMBELI tanpa perlu
+        // meminta siswa/guru memasukkan ID Spreadsheet lagi!
         let targetSpreadsheetId = getConfiguredClientSpreadsheetId();
-        if (!targetSpreadsheetId) {
+        let data = await sendApiRequestToGas_(apiUrl, funcName, args, targetSpreadsheetId);
+
+        // Simpan _bound_spreadsheet_id ke localStorage browser jika dikembalikan oleh server
+        if (data && data._bound_spreadsheet_id) {
+          try {
+            localStorage.setItem(STORAGE_KEYS.CLIENT_SS_ID, data._bound_spreadsheet_id);
+          } catch (e) {}
+        }
+
+        // HANYA munculkan pop-up 1x saat website baru ini benar-benar belum pernah diikat ke ID Spreadsheet manapun!
+        if (data && data.status === 'error' && data.code === 'MISSING_SPREADSHEET_ID') {
           if (funcName === 'getPengaturanWebsite') {
-            return { status: 'error', message: 'CLIENT_SPREADSHEET_ID belum diisi.' };
+            return data;
           }
           hideLoader();
-          targetSpreadsheetId = await promptConfigureClientSpreadsheetId();
+          targetSpreadsheetId = await promptConfigureClientSpreadsheetId(data.message);
           if (!targetSpreadsheetId) {
-            throw new Error('ID Google Spreadsheet belum diisi. Silakan isi CLIENT_SPREADSHEET_ID di index.html.');
+            throw new Error('Aktivasi dibatalkan. Masukkan ID Google Spreadsheet sekolah 1 kali untuk mengaktifkan website ini.');
           }
-          showLoader('Memverifikasi ID Spreadsheet...');
-        }
-
-        const payloadStr = JSON.stringify({
-          action: funcName,
-          args: args,
-          spreadsheetId: targetSpreadsheetId,
-          gasUrl: apiUrl
-        });
-
-        // 2A. Utamakan memanggil Same-Origin Vercel Serverless Proxy (/api/gas)
-        //     agar 100% bebas blokir CORS, 302 redirect Google, maupun AdBlocker browser!
-        if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
-          try {
-            const proxyResp = await fetch('/api/gas', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json'
-              },
-              body: payloadStr
-            });
-            if (proxyResp.ok) {
-              const contentType = proxyResp.headers.get('content-type') || '';
-              if (contentType.includes('application/json')) {
-                return await proxyResp.json();
-              }
-            }
-          } catch (proxyErr) {
-            // Jika bukan di Vercel (misal dibuka dari Live Server lokal), lanjut ke Direct Fetch di bawah
+          showLoader('Mengikat ID Spreadsheet ke domain website ini secara permanen...');
+          data = await sendApiRequestToGas_(apiUrl, funcName, args, targetSpreadsheetId);
+          if (data && data._bound_spreadsheet_id) {
+            try {
+              localStorage.setItem(STORAGE_KEYS.CLIENT_SS_ID, data._bound_spreadsheet_id);
+            } catch (e) {}
           }
         }
 
-        // 2B. Fallback Direct Fetch ke Google Apps Script (POST lalu fallback GET jika terkena redirect CORS)
-        try {
-          const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'text/plain;charset=utf-8'
-            },
-            body: JSON.stringify({
-              action: funcName,
-              args: args,
-              spreadsheetId: targetSpreadsheetId
-            }),
-            redirect: 'follow'
-          });
-
-          const rawText = await response.text();
-          if (rawText.trim().startsWith('<')) {
-            throw new Error(
-              'Deployment Google Apps Script Anda masih menjalankan kode versi lama. Pastikan code.gs terbaru sudah di-paste ke Apps Script dan di-deploy sebagai "New version / Versi baru" dengan akses "Anyone / Siapa saja".'
-            );
-          }
-          return JSON.parse(rawText);
-        } catch (postErr) {
-          // Fallback terakhir via GET query parameter jika POST terkena CORS redirect 302 di browser
-          const getUrl =
-            apiUrl +
-            (apiUrl.includes('?') ? '&' : '?') +
-            'action=' + encodeURIComponent(funcName) +
-            '&args=' + encodeURIComponent(JSON.stringify(args)) +
-            (targetSpreadsheetId ? '&spreadsheetId=' + encodeURIComponent(targetSpreadsheetId) : '');
-          const getResp = await fetch(getUrl, {
-            method: 'GET',
-            redirect: 'follow'
-          });
-          const getRaw = await getResp.text();
-          if (getRaw.trim().startsWith('<')) {
-            throw new Error(
-              'Google Apps Script mengembalikan HTML (bukan JSON). Pastikan Anda sudah update code.gs di Editor Apps Script lalu klik Deploy -> Manage Deployments -> Edit -> pilih "New version / Versi baru" -> Deploy.'
-            );
-          }
-          return JSON.parse(getRaw);
-        }
+        return data;
       }
 
       function switchView(viewId) {
