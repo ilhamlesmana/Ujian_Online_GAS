@@ -278,7 +278,8 @@ function setupDatabaseDanDataAwal() {
       ["login_judul", "CBT Sekolah Digital"],
       ["login_subtitle", "Terintegrasi Relasi Tingkat Kelas (Kelas 1 s/d Kelas 12) & Multi-Evaluasi"],
       ["login_footer", "Isolasi Mapel Per Rombel Kelas & Anti-Cheat Fullscreen."],
-      ["login_bg_gradient", "linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #0ea5e9 100%)"]
+      ["login_bg_gradient", "linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #0ea5e9 100%)"],
+      ["email_notifikasi", ""]
     ]
   };
 
@@ -1234,7 +1235,8 @@ function getDefaultWebsiteSettings_() {
     login_judul: "CBT Sekolah Digital",
     login_subtitle: "Terintegrasi Relasi Tingkat Kelas (Kelas 1 s/d Kelas 12) & Multi-Evaluasi",
     login_footer: "Isolasi Mapel Per Rombel Kelas & Anti-Cheat Fullscreen.",
-    login_bg_gradient: "linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #0ea5e9 100%)"
+    login_bg_gradient: "linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #0ea5e9 100%)",
+    email_notifikasi: ""
   };
 }
 
@@ -1255,7 +1257,7 @@ function getPengaturanWebsite() {
       const k = String(r.kunci || "").trim();
       if (k && Object.prototype.hasOwnProperty.call(settings, k)) {
         const val = String(r.nilai !== undefined ? r.nilai : "").trim();
-        if (k === "logo_url") {
+        if (k === "logo_url" || k === "email_notifikasi") {
           settings[k] = val;
         } else if (val !== "") {
           settings[k] = val;
@@ -1284,7 +1286,8 @@ function simpanPengaturanWebsite(payload) {
       login_judul: String(payload.login_judul || "").trim() || defaults.login_judul,
       login_subtitle: String(payload.login_subtitle || "").trim() || defaults.login_subtitle,
       login_footer: String(payload.login_footer || "").trim() || defaults.login_footer,
-      login_bg_gradient: String(payload.login_bg_gradient || "").trim() || defaults.login_bg_gradient
+      login_bg_gradient: String(payload.login_bg_gradient || "").trim() || defaults.login_bg_gradient,
+      email_notifikasi: String(payload.email_notifikasi || "").trim()
     };
 
     if (nextSettings.logo_url.length > 48000) {
@@ -1589,14 +1592,16 @@ function submitUjian(payload) {
     ]);
 
     try {
-      if (
-        EMAIL_GURU_NOTIFIKASI &&
-        EMAIL_GURU_NOTIFIKASI !== "GANTI_DENGAN_EMAIL_NOTIFIKASI@gmail.com" &&
-        EMAIL_GURU_NOTIFIKASI.includes("@")
-      ) {
-        const subject = "[Hasil Penilaian] " + nama + " (" + kelas + ") - " + mapel;
+      // Ambil email_notifikasi dari sheet PENGATURAN_WEBSITE milik sekolah/pembeli ini sendiri (terisolasi per sekolah!)
+      const webCfg = getPengaturanWebsite().settings || {};
+      const emailTarget = String(webCfg.email_notifikasi || "").trim() ||
+        (EMAIL_GURU_NOTIFIKASI !== "GANTI_DENGAN_EMAIL_NOTIFIKASI@gmail.com" ? String(EMAIL_GURU_NOTIFIKASI || "").trim() : "");
+
+      if (emailTarget && emailTarget.includes("@")) {
+        const namaSekolah = String(webCfg.nama_website || "Sistem Ujian Online Sekolah Digital").trim();
+        const subject = "[" + namaSekolah + "] Hasil Penilaian: " + nama + " (" + kelas + ") - " + mapel;
         const body =
-          "Halo Bapak/Ibu Guru,\n\n" +
+          "Halo Bapak/Ibu Guru / Panitia Ujian " + namaSekolah + ",\n\n" +
           "Berikut adalah ringkasan hasil pengerjaan siswa:\n\n" +
           "Waktu Submit     : " + timestamp + "\n" +
           "NIS              : " + nis + "\n" +
@@ -1604,9 +1609,10 @@ function submitUjian(payload) {
           "Kelas            : " + kelas + "\n" +
           "Paket Penilaian  : " + mapel + "\n" +
           "Jawaban Benar    : " + jumlahBenar + " dari " + totalSoal + " soal\n" +
-          "Nilai Akhir      : " + nilaiAkhir + " / 100\n\n" +
-          "Sistem Ujian Online Sekolah Digital V2.5";
-        MailApp.sendEmail(EMAIL_GURU_NOTIFIKASI, subject, body);
+          "Nilai Akhir      : " + nilaiAkhir + " / 100\n" +
+          "Pelanggaran      : " + rawCatatan.length + " poin\n\n" +
+          namaSekolah;
+        MailApp.sendEmail(emailTarget, subject, body);
       }
     } catch (emailErr) {
       console.warn("Gagal mengirim email notifikasi: " + emailErr.message);

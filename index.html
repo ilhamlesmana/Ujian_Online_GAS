@@ -5148,12 +5148,19 @@
                           required>
                       </div>
 
-                      <div class="mb-0">
+                      <div class="mb-3">
                         <label class="form-label small fw-semibold">Subtitle Website (Tampil di Navbar Semua Halaman) <span
                             class="text-danger">*</span></label>
                         <input type="text" id="setWebSubtitle" class="form-control rounded-3"
                           placeholder="Contoh: Portal Evaluasi &amp; Ujian Online Terpadu"
                           oninput="updateWebsiteSettingsLivePreview()" required>
+                      </div>
+
+                      <div class="mb-0">
+                        <label class="form-label small fw-semibold"><i class="bi bi-envelope-at text-primary me-1"></i>Email Notifikasi Hasil Ujian Sekolah (Opsional)</label>
+                        <input type="email" id="setWebEmailNotifikasi" class="form-control rounded-3"
+                          placeholder="Contoh: kurikulum@sekolahanda.sch.id (Kosongkan jika tidak ingin email notifikasi)">
+                        <small class="text-muted" style="font-size: 0.72rem;">Jika diisi, setiap siswa yang selesai mengumpulkan ujian akan otomatis mengirimkan ringkasan nilai ke alamat email sekolah ini.</small>
                       </div>
                     </div>
 
@@ -6042,7 +6049,8 @@
         login_judul: 'CBT Sekolah Digital',
         login_subtitle: 'Terintegrasi Relasi Tingkat Kelas (Kelas 1 s/d Kelas 12) & Multi-Evaluasi',
         login_footer: 'Isolasi Mapel Per Rombel Kelas & Anti-Cheat Fullscreen.',
-        login_bg_gradient: 'linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #0ea5e9 100%)'
+        login_bg_gradient: 'linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #0ea5e9 100%)',
+        email_notifikasi: ''
       };
       let websiteSettingsCache = Object.assign({}, DEFAULT_WEBSITE_SETTINGS);
 
@@ -11492,20 +11500,6 @@
       function confirmHapusMasterJenis(kodeJenis, namaJenis) {
         Swal.fire({
           title: 'Hapus Jenis Penilaian?',
-          text: `Hapus "${namaJenis}" (${kodeJenis}) dari daftar Combobox khusus akun Anda?`,
-          icon: 'warning',
-          showCancelButton: true,
-          confirmButtonColor: '#ef4444',
-          confirmButtonText: 'Ya, Hapus',
-          cancelButtonText: 'Batal'
-        }).then(async result => {
-          if (result.isConfirmed) {
-            showLoader('Menghapus dari daftar penilaian Anda...');
-            try {
-              const guruUsername = currentUser.data.username || currentUser.data.id;
-              const res = await callServer('hapusMasterJenisPenilaian', kodeJenis, guruUsername);
-              hideLoader();
-              if (res.status === 'success') {
                 guruDataCache.master_jenis_penilaian = guruDataCache.master_jenis_penilaian.filter(j => j.kode_jenis !== kodeJenis);
                 const remainingNames = new Set(guruDataCache.master_jenis_penilaian.map(j => j.nama_jenis));
                 guruDataCache.jenis_list = Array.from(remainingNames);
@@ -12877,6 +12871,8 @@
         elNama.value = s.nama_website || DEFAULT_WEBSITE_SETTINGS.nama_website;
         document.getElementById('setWebSubtitle').value = s.subtitle_website || DEFAULT_WEBSITE_SETTINGS.subtitle_website;
         document.getElementById('setWebLogoUrl').value = s.logo_url || '';
+        const elEmail = document.getElementById('setWebEmailNotifikasi');
+        if (elEmail) elEmail.value = s.email_notifikasi || '';
         document.getElementById('setLoginJudul').value = s.login_judul || DEFAULT_WEBSITE_SETTINGS.login_judul;
         document.getElementById('setLoginSubtitle').value = s.login_subtitle || DEFAULT_WEBSITE_SETTINGS.login_subtitle;
         document.getElementById('setLoginFooter').value = s.login_footer || DEFAULT_WEBSITE_SETTINGS.login_footer;
@@ -13021,6 +13017,8 @@
         document.getElementById('setWebNama').value = DEFAULT_WEBSITE_SETTINGS.nama_website;
         document.getElementById('setWebSubtitle').value = DEFAULT_WEBSITE_SETTINGS.subtitle_website;
         document.getElementById('setWebLogoUrl').value = '';
+        const elEmail = document.getElementById('setWebEmailNotifikasi');
+        if (elEmail) elEmail.value = '';
         document.getElementById('setLoginJudul').value = DEFAULT_WEBSITE_SETTINGS.login_judul;
         document.getElementById('setLoginSubtitle').value = DEFAULT_WEBSITE_SETTINGS.login_subtitle;
         document.getElementById('setLoginFooter').value = DEFAULT_WEBSITE_SETTINGS.login_footer;
@@ -13028,6 +13026,7 @@
         if (websiteSettingsCache) {
           websiteSettingsCache.logo_url = '';
           websiteSettingsCache.logo_url_resolved = '';
+          websiteSettingsCache.email_notifikasi = '';
         }
         updateWebsiteSettingsLivePreview();
       }
@@ -13038,6 +13037,7 @@
           nama_website: document.getElementById('setWebNama').value.trim(),
           subtitle_website: document.getElementById('setWebSubtitle').value.trim(),
           logo_url: document.getElementById('setWebLogoUrl').value.trim(),
+          email_notifikasi: (document.getElementById('setWebEmailNotifikasi')?.value || '').trim(),
           login_judul: document.getElementById('setLoginJudul').value.trim(),
           login_subtitle: document.getElementById('setLoginSubtitle').value.trim(),
           login_footer: document.getElementById('setLoginFooter').value.trim(),
