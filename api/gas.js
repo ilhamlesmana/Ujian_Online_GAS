@@ -35,6 +35,12 @@ module.exports = async function handler(req, res) {
     const args = Array.isArray(payload.args)
       ? payload.args
       : (req.query && req.query.args ? JSON.parse(req.query.args) : []);
+    const spreadsheetId = String(
+      payload.spreadsheetId ||
+      (req.query && req.query.spreadsheetId) ||
+      process.env.CLIENT_SPREADSHEET_ID ||
+      ''
+    ).trim();
     const targetGasUrl = String(payload.gasUrl || DEFAULT_GAS_URL).trim();
 
     if (!targetGasUrl || !/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec/i.test(targetGasUrl)) {
@@ -51,27 +57,28 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // 1. Coba kirim via POST ke doPost(e) di Google Apps Script
+    // 1. Coba kirim via POST ke doPost(e) di Google Apps Script (Sertakan spreadsheetId pembeli)
     let gasResponse = await fetch(targetGasUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'text/plain;charset=utf-8',
         'Accept': 'application/json, text/plain, */*'
       },
-      body: JSON.stringify({ action, args }),
+      body: JSON.stringify({ action, args, spreadsheetId }),
       redirect: 'follow'
     });
 
     let rawText = await gasResponse.text();
 
     // 2. Fallback pintar: Jika deployment Apps Script lama belum memiliki doPost(e)
-    //    atau mengembalikan halaman HTML, coba panggil via GET ?action=...&args=...
+    //    atau mengembalikan halaman HTML, coba panggil via GET ?action=...&args=...&spreadsheetId=...
     if (rawText.trim().startsWith('<') || !rawText.trim().startsWith('{')) {
       const urlWithQuery =
         targetGasUrl +
         (targetGasUrl.includes('?') ? '&' : '?') +
         'action=' + encodeURIComponent(action) +
-        '&args=' + encodeURIComponent(JSON.stringify(args));
+        '&args=' + encodeURIComponent(JSON.stringify(args)) +
+        (spreadsheetId ? '&spreadsheetId=' + encodeURIComponent(spreadsheetId) : '');
 
       const getResp = await fetch(urlWithQuery, {
         method: 'GET',

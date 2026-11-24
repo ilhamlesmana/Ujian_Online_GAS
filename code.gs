@@ -23,10 +23,131 @@ const SHEET_NAMES = {
   SOAL: "BANK_SOAL",
   PENGATURAN: "PENGATURAN_UJIAN",
   HASIL: "HASIL_UJIAN",
-  WEB_SETTINGS: "PENGATURAN_WEBSITE"
+  WEB_SETTINGS: "PENGATURAN_WEBSITE",
+  PEMBELI: "DATA_PEMBELI"
 };
 
 let _cachedSs = null;
+let _cachedMasterSs = null;
+let _activeTargetSpreadsheetId = "";
+
+/**
+ * Mengekstrak ID Spreadsheet murni apabila pembeli memasukkan URL Google Sheet lengkap
+ * maupun ID Spreadsheet langsung.
+ */
+function extractCleanSpreadsheetId_(rawInput) {
+  const str = String(rawInput || "").trim();
+  if (!str || str === "GANTI_DENGAN_ID_SPREADSHEET_ANDA") return "";
+  const urlMatch = str.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/i);
+  if (urlMatch && urlMatch[1]) return urlMatch[1];
+  return str;
+}
+
+/**
+ * Membuka Master Spreadsheet milik Penjual (Owner) tempat sheet DATA_PEMBELI berada.
+ */
+function getMasterOwnerSpreadsheet_() {
+  if (_cachedMasterSs) return _cachedMasterSs;
+  let ss = null;
+  try {
+    const cleanMasterId = extractCleanSpreadsheetId_(SPREADSHEET_ID);
+    if (cleanMasterId) {
+      ss = SpreadsheetApp.openById(cleanMasterId);
+    } else {
+      ss = SpreadsheetApp.getActiveSpreadsheet();
+    }
+  } catch (err) {
+    ss = SpreadsheetApp.getActiveSpreadsheet();
+  }
+  if (!ss) {
+    throw new Error("Master Spreadsheet Penjual tidak ditemukan.");
+  }
+  _cachedMasterSs = ss;
+  return ss;
+}
+
+/**
+ * Memastikan sheet DATA_PEMBELI tersedia di Master Spreadsheet milik Anda (Penjual)
+ * untuk mengontrol status AKTIF / NONAKTIF setiap Spreadsheet ID pembeli.
+ */
+function ensureDataPembeliSheet_(masterSs) {
+  const ss = masterSs || getMasterOwnerSpreadsheet_();
+  let sheet = ss.getSheetByName(SHEET_NAMES.PEMBELI);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAMES.PEMBELI);
+    const headers = ["spreadsheet_id", "nama_pembeli_sekolah", "status", "tanggal_daftar", "catatan"];
+    sheet.appendRow(headers);
+    sheet.getRange(1, 1, 1, headers.length)
+      .setFontWeight("bold")
+      .setBackground("#fef08a")
+      .setFontColor("#854d0e");
+    sheet.appendRow([
+      ss.getId(),
+      "Master Server Utama (Milik Penjual)",
+      "AKTIF",
+      Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Jakarta", "yyyy-MM-dd"),
+      "Jangan dihapus - ID Spreadsheet Master"
+    ]);
+    sheet.autoResizeColumns(1, headers.length);
+  }
+  return sheet;
+}
+
+/**
+ * Memeriksa apakah Spreadsheet ID pembeli terdaftar dan berstatus AKTIF di sheet DATA_PEMBELI.
+ */
+function verifyBuyerSpreadsheetAccess_(rawBuyerSpreadsheetId) {
+  const masterSs = getMasterOwnerSpreadsheet_();
+  const masterId = masterSs.getId();
+  const cleanTargetId = extractCleanSpreadsheetId_(rawBuyerSpreadsheetId);
+
+  // Jika tidak mengirim spreadsheetId khusus, atau sama dengan Master Spreadsheet Anda sendiri -> Izinkan
+  if (!cleanTargetId || cleanTargetId === masterId) {
+    return { allowed: true, targetId: masterId, isMaster: true };
+  }
+
+  const sheetPembeli = ensureDataPembeliSheet_(masterSs);
+  const lastRow = sheetPembeli.getLastRow();
+  if (lastRow <= 1) {
+    return {
+      allowed: false,
+      message: "ID Spreadsheet (" + cleanTargetId + ") belum terdaftar di sistem. Silakan hubungi Developer untuk aktivasi."
+    };
+  }
+
+  const rows = sheetPembeli.getRange(2, 1, lastRow - 1, 5).getValues();
+  for (let i = 0; i < rows.length; i++) {
+    const rowSsId = extractCleanSpreadsheetId_(rows[i][0]);
+    const namaSekolah = String(rows[i][1] || "Pembeli").trim();
+    const status = String(rows[i][2] || "AKTIF").trim().toUpperCase();
+    const catatan = String(rows[i][4] || "").trim();
+
+    if (rowSsId && rowSsId === cleanTargetId) {
+      if (status === "AKTIF" || status === "ACTIVE" || status === "YA" || status === "OPEN" || status === "1") {
+        return { allowed: true, targetId: cleanTargetId, isMaster: false, namaSekolah: namaSekolah };
+      } else {
+        return {
+          allowed: false,
+          message:
+            "Akses Aplikasi untuk " +
+            namaSekolah +
+            " saat ini sedang DINONAKTIFKAN (Status: " +
+            status +
+            ")." +
+            (catatan ? " Catatan: " + catatan : " Silakan hubungi Administrator/Developer.")
+        };
+      }
+    }
+  }
+
+  return {
+    allowed: false,
+    message:
+      "ID Spreadsheet (" +
+      cleanTargetId +
+      ") belum diaktifkan di server pusat. Pastikan Anda telah memberikan ID Spreadsheet ini kepada Developer dan membagikan akses Editor pada Google Sheet Anda."
+  };
+}
 
 /**
  * ============================================================================
@@ -151,7 +272,12 @@ function setupDatabaseDanDataAwal() {
     sheet.autoResizeColumns(1, rows[0].length);
   }
 
-  Logger.log("SUKSES! Database V2.5 (beserta DATA_ADMIN) berhasil dibuat!");
+  // Buat juga tabel kontrol DATA_PEMBELI di Master Spreadsheet Anda (tidak menghapus data pembeli yang sudah ada)
+  try {
+    ensureDataPembeliSheet_(getMasterOwnerSpreadsheet_());
+  } catch (e) {}
+
+  Logger.log("SUKSES! Database V3.0 (beserta DATA_ADMIN & DATA_PEMBELI) berhasil dibuat!");
 }
 
 /**
@@ -159,7 +285,12 @@ function setupDatabaseDanDataAwal() {
  */
 function doGet(e) {
   if (e && e.parameter && e.parameter.action) {
-    return handleExternalApiRequest_(e.parameter.action, e.parameter.args ? JSON.parse(e.parameter.args) : []);
+    const reqSsId = (e.parameter.spreadsheetId || e.parameter.ssId || "").trim();
+    return handleExternalApiRequest_(
+      e.parameter.action,
+      e.parameter.args ? JSON.parse(e.parameter.args) : [],
+      reqSsId
+    );
   }
   return HtmlService.createHtmlOutputFromFile("index")
     .setTitle("Sistem Ujian Online Sekolah Digital")
@@ -177,7 +308,8 @@ function doPost(e) {
     const body = JSON.parse(rawBody);
     const action = String(body.action || (e && e.parameter && e.parameter.action) || "").trim();
     const args = Array.isArray(body.args) ? body.args : [];
-    return handleExternalApiRequest_(action, args);
+    const reqSsId = String(body.spreadsheetId || (e && e.parameter && e.parameter.spreadsheetId) || "").trim();
+    return handleExternalApiRequest_(action, args, reqSsId);
   } catch (err) {
     return ContentService.createTextOutput(
       JSON.stringify({ status: "error", message: "Format request API tidak valid: " + err.message })
@@ -187,9 +319,9 @@ function doPost(e) {
 
 /**
  * Dispatcher fungsi backend yang diizinkan untuk dipanggil dari aplikasi Vercel / Web Eksternal
- * Menggunakan globalThis[action] agar tidak gagal jika ada perbedaan versi fungsi di Google Apps Script.
+ * Sekaligus memvalidasi apakah ID Spreadsheet Pembeli berstatus AKTIF di sheet DATA_PEMBELI.
  */
-function handleExternalApiRequest_(action, args) {
+function handleExternalApiRequest_(action, args, buyerSpreadsheetId) {
   const cleanAction = String(action || "").trim();
 
   // Cegah pemanggilan fungsi internal/private (yang diakhiri underscore _) atau fungsi bawaan
@@ -204,6 +336,22 @@ function handleExternalApiRequest_(action, args) {
       JSON.stringify({ status: "error", message: "Fungsi API '" + cleanAction + "' tidak diizinkan." })
     ).setMimeType(ContentService.MimeType.JSON);
   }
+
+  // 1. Cek aktivasi Spreadsheet ID Pembeli di sheet DATA_PEMBELI milik Anda
+  const accessCheck = verifyBuyerSpreadsheetAccess_(buyerSpreadsheetId);
+  if (!accessCheck.allowed) {
+    return ContentService.createTextOutput(
+      JSON.stringify({
+        status: "error",
+        code: "SPREADSHEET_NOT_ACTIVE",
+        message: accessCheck.message
+      })
+    ).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 2. Arahkan koneksi database ke Spreadsheet milik Pembeli selama request ini berlangsung
+  _activeTargetSpreadsheetId = accessCheck.targetId || "";
+  _cachedSs = null;
 
   const targetFn = typeof globalThis !== "undefined" ? globalThis[cleanAction] : this[cleanAction];
   if (typeof targetFn !== "function") {
@@ -224,7 +372,8 @@ function handleExternalApiRequest_(action, args) {
 }
 
 /**
- * Membuka koneksi Spreadsheet dengan In-Memory Caching
+ * Membuka koneksi Spreadsheet (Otomatis mengarah ke Spreadsheet Pembeli jika dipanggil dari Frontend Pembeli,
+ * dan otomatis men-setup 10 sheet database awal jika Spreadsheet Pembeli masih baru/kosong!)
  */
 function getSpreadsheet_(forceCheckSchema) {
   if (_cachedSs && !forceCheckSchema) {
@@ -232,21 +381,32 @@ function getSpreadsheet_(forceCheckSchema) {
   }
 
   let ss = null;
+  const targetId = extractCleanSpreadsheetId_(_activeTargetSpreadsheetId) || extractCleanSpreadsheetId_(SPREADSHEET_ID);
+
   try {
-    if (SPREADSHEET_ID && SPREADSHEET_ID !== "GANTI_DENGAN_ID_SPREADSHEET_ANDA") {
-      ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    if (targetId) {
+      ss = SpreadsheetApp.openById(targetId);
     } else {
       ss = SpreadsheetApp.getActiveSpreadsheet();
     }
   } catch (err) {
+    if (_activeTargetSpreadsheetId) {
+      throw new Error(
+        "Gagal mengakses Google Spreadsheet Pembeli (ID: " +
+        _activeTargetSpreadsheetId +
+        "). Pastikan Spreadsheet tersebut sudah di-Share (Bagikan) dengan akses 'Editor' ke email server atau 'Siapa saja yang memiliki link dapat mengedit'."
+      );
+    }
     ss = SpreadsheetApp.getActiveSpreadsheet();
   }
 
   if (!ss) {
-    throw new Error("Spreadsheet tidak ditemukan. Pastikan SPREADSHEET_ID sudah diisi atau buka script dari Google Sheet.");
+    throw new Error("Spreadsheet tidak ditemukan. Pastikan SPREADSHEET_ID sudah diisi dan diberi akses Editor.");
   }
 
-  if (forceCheckSchema) {
+  // Jika Spreadsheet milik pembeli masih kosong (baru memiliki Sheet1 bawaan dan belum punya DATA_ADMIN),
+  // otomatis buatkan ke-10 sheet database beserta akun admin default agar pembeli langsung bisa login!
+  if (forceCheckSchema || !ss.getSheetByName(SHEET_NAMES.ADMIN)) {
     ensureSheetsExist_(ss);
   }
   _cachedSs = ss;

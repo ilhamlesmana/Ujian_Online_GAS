@@ -6022,14 +6022,16 @@
 
       /**
        * ============================================================================
-       * KONFIGURASI URL API GOOGLE APPS SCRIPT (UNTUK HOSTING DI VERCEL / NETLIFY)
+       * KONFIGURASI FRONTEND PEMBELI (UNTUK HOSTING DI VERCEL / NETLIFY)
        * ============================================================================
-       * Tempelkan URL Web App Google Apps Script Anda (yang berakhiran /exec) pada
-       * konstanta GAS_WEB_APP_URL di bawah ini agar seluruh pengguna yang membuka
-       * domain Vercel Anda otomatis terhubung ke database Google Spreadsheet.
-       * Contoh: 'https://script.google.com/macros/s/AKfycbx.../exec'
+       * 1. GAS_WEB_APP_URL: URL Server Backend Utama (Tetap di Akun Google Developer).
+       * 2. CLIENT_SPREADSHEET_ID: Isi dengan ID Google Spreadsheet (atau URL Google Sheet)
+       *    milik Pembeli/Sekolah. Pembeli cukup membuat Google Spreadsheet kosong,
+       *    membagikan akses "Anyone with the link -> Editor", lalu menempelkan ID-nya di sini!
+       *    (Jika dikosongkan '', maka otomatis menggunakan Master Spreadsheet utama).
        */
       const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyfOKlaGhb8cKmGo2PCIEGI5Jp2gF_4_gh4I3Q0-pTCMtMc3Rzi7A6CDBuQNsgoNR7p/exec';
+      const CLIENT_SPREADSHEET_ID = '';
 
       const DEFAULT_WEBSITE_SETTINGS = {
         nama_website: 'Sistem Ujian Online Sekolah Digital',
@@ -6214,9 +6216,12 @@
           showLoader('Menghubungkan ke server Spreadsheet...');
         }
 
+        const targetSpreadsheetId = String(CLIENT_SPREADSHEET_ID || '').trim();
+
         const payloadStr = JSON.stringify({
           action: funcName,
           args: args,
+          spreadsheetId: targetSpreadsheetId,
           gasUrl: apiUrl
         });
 
@@ -6251,7 +6256,8 @@
             },
             body: JSON.stringify({
               action: funcName,
-              args: args
+              args: args,
+              spreadsheetId: targetSpreadsheetId
             }),
             redirect: 'follow'
           });
@@ -6269,7 +6275,8 @@
             apiUrl +
             (apiUrl.includes('?') ? '&' : '?') +
             'action=' + encodeURIComponent(funcName) +
-            '&args=' + encodeURIComponent(JSON.stringify(args));
+            '&args=' + encodeURIComponent(JSON.stringify(args)) +
+            (targetSpreadsheetId ? '&spreadsheetId=' + encodeURIComponent(targetSpreadsheetId) : '');
           const getResp = await fetch(getUrl, {
             method: 'GET',
             redirect: 'follow'
