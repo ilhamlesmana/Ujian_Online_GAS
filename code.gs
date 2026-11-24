@@ -187,45 +187,33 @@ function doPost(e) {
 
 /**
  * Dispatcher fungsi backend yang diizinkan untuk dipanggil dari aplikasi Vercel / Web Eksternal
+ * Menggunakan globalThis[action] agar tidak gagal jika ada perbedaan versi fungsi di Google Apps Script.
  */
 function handleExternalApiRequest_(action, args) {
-  const allowedHandlers = {
-    getPengaturanWebsite: getPengaturanWebsite,
-    simpanPengaturanWebsite: simpanPengaturanWebsite,
-    loginUser: loginUser,
-    getDashboardSiswa: getDashboardSiswa,
-    ubahPasswordSiswa: ubahPasswordSiswa,
-    getSoalUjian: getSoalUjian,
-    submitUjian: submitUjian,
-    getDetailRiwayatUjian: getDetailRiwayatUjian,
-    getDashboardGuru: getDashboardGuru,
-    ubahPasswordGuru: ubahPasswordGuru,
-    simpanMasterJenisPenilaian: simpanMasterJenisPenilaian,
-    hapusMasterJenisPenilaian: hapusMasterJenisPenilaian,
-    simpanSoal: simpanSoal,
-    simpanSoalBatch: simpanSoalBatch,
-    hapusSoal: hapusSoal,
-    updatePengaturanUjian: updatePengaturanUjian,
-    hapusHasilUjianSiswa: hapusHasilUjianSiswa,
-    getDashboardAdmin: getDashboardAdmin,
-    simpanDataGuru: simpanDataGuru,
-    hapusDataGuru: hapusDataGuru,
-    simpanDataMapel: simpanDataMapel,
-    hapusDataMapel: hapusDataMapel,
-    simpanDataKelas: simpanDataKelas,
-    hapusDataKelas: hapusDataKelas,
-    simpanDataSiswa: simpanDataSiswa,
-    hapusDataSiswa: hapusDataSiswa
-  };
+  const cleanAction = String(action || "").trim();
 
-  if (!action || typeof allowedHandlers[action] !== "function") {
+  // Cegah pemanggilan fungsi internal/private (yang diakhiri underscore _) atau fungsi bawaan
+  if (
+    !cleanAction ||
+    cleanAction.endsWith("_") ||
+    cleanAction === "doGet" ||
+    cleanAction === "doPost" ||
+    cleanAction === "setupDatabaseDanDataAwal"
+  ) {
     return ContentService.createTextOutput(
-      JSON.stringify({ status: "error", message: "Fungsi API '" + action + "' tidak ditemukan atau tidak diizinkan." })
+      JSON.stringify({ status: "error", message: "Fungsi API '" + cleanAction + "' tidak diizinkan." })
+    ).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  const targetFn = typeof globalThis !== "undefined" ? globalThis[cleanAction] : this[cleanAction];
+  if (typeof targetFn !== "function") {
+    return ContentService.createTextOutput(
+      JSON.stringify({ status: "error", message: "Fungsi API '" + cleanAction + "' tidak ditemukan di code.gs." })
     ).setMimeType(ContentService.MimeType.JSON);
   }
 
   try {
-    const result = allowedHandlers[action].apply(null, Array.isArray(args) ? args : []);
+    const result = targetFn.apply(null, Array.isArray(args) ? args : []);
     return ContentService.createTextOutput(JSON.stringify(result))
       .setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
