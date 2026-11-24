@@ -6017,18 +6017,19 @@
         SESSION: 'app_user_session',
         EXAM_STATE: 'app_exam_state',
         WEB_SETTINGS: 'app_website_settings',
-        GAS_API_URL: 'app_gas_webapp_api_url'
+        GAS_API_URL: 'app_gas_webapp_api_url',
+        CLIENT_SS_ID: 'app_client_spreadsheet_id'
       };
 
       /**
        * ============================================================================
        * KONFIGURASI FRONTEND PEMBELI (UNTUK HOSTING DI VERCEL / NETLIFY)
        * ============================================================================
-       * 1. GAS_WEB_APP_URL: URL Server Backend Utama (Tetap di Akun Google Developer).
-       * 2. CLIENT_SPREADSHEET_ID: Isi dengan ID Google Spreadsheet (atau URL Google Sheet)
-       *    milik Pembeli/Sekolah. Pembeli cukup membuat Google Spreadsheet kosong,
-       *    membagikan akses "Anyone with the link -> Editor", lalu menempelkan ID-nya di sini!
-       *    (Jika dikosongkan '', maka otomatis menggunakan Master Spreadsheet utama).
+       * 1. GAS_WEB_APP_URL: URL Engine Backend Terpusat (Hanya sebagai Mesin Pemroses API).
+       *    Meskipun URL ini dicantumkan, pembeli TIDAK BISA masuk ke Master Sheet Anda
+       *    karena server WAJIB memeriksa CLIENT_SPREADSHEET_ID di bawah ini!
+       * 2. CLIENT_SPREADSHEET_ID: Wajib diisi dengan ID Google Spreadsheet (atau URL Google Sheet)
+       *    milik Pembeli/Sekolah masing-masing yang sudah terdaftar AKTIF di DATA_PEMBELI.
        */
       const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyfOKlaGhb8cKmGo2PCIEGI5Jp2gF_4_gh4I3Q0-pTCMtMc3Rzi7A6CDBuQNsgoNR7p/exec';
       const CLIENT_SPREADSHEET_ID = '';
@@ -6192,6 +6193,71 @@
         return '';
       }
 
+      function extractCleanSpreadsheetIdClient(rawVal) {
+        const str = String(rawVal || '').trim();
+        if (!str) return '';
+        const m = str.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/i);
+        return (m && m[1]) ? m[1] : str;
+      }
+
+      function getConfiguredClientSpreadsheetId() {
+        const fromConst = extractCleanSpreadsheetIdClient(CLIENT_SPREADSHEET_ID);
+        if (fromConst) return fromConst;
+        try {
+          const urlParams = new URLSearchParams(window.location.search);
+          const paramSs = extractCleanSpreadsheetIdClient(urlParams.get('ss') || urlParams.get('spreadsheetId') || '');
+          if (paramSs) {
+            localStorage.setItem(STORAGE_KEYS.CLIENT_SS_ID, paramSs);
+            return paramSs;
+          }
+          const saved = extractCleanSpreadsheetIdClient(localStorage.getItem(STORAGE_KEYS.CLIENT_SS_ID) || '');
+          if (saved) return saved;
+        } catch (e) {}
+        return '';
+      }
+
+      async function promptConfigureClientSpreadsheetId(initialMsg = '') {
+        if (typeof Swal === 'undefined') return '';
+        const currentSs = getConfiguredClientSpreadsheetId();
+        const { value: inputSs } = await Swal.fire({
+          title: 'Masukkan ID Spreadsheet Anda',
+          html: `
+            <div class="text-start small">
+              ${initialMsg ? `<div class="alert alert-warning py-2 px-3 mb-3">${initialMsg}</div>` : ''}
+              <p class="text-muted mb-2">
+                Tempelkan <strong>Link Google Spreadsheet</strong> atau <strong>ID Spreadsheet</strong> milik sekolah Anda yang telah didaftarkan ke Developer.
+              </p>
+              <div class="p-2 rounded-3 bg-light border text-secondary" style="font-size: 0.74rem;">
+                <strong>Tips Permanen:</strong> Isi konstanta <code>CLIENT_SPREADSHEET_ID</code> di dalam file <code>index.html</code> dengan ID Spreadsheet Anda agar seluruh siswa &amp; guru langsung terhubung otomatis.
+              </div>
+            </div>
+          `,
+          input: 'text',
+          inputValue: currentSs || '',
+          inputPlaceholder: 'Tempel Link atau ID Google Spreadsheet di sini...',
+          showCancelButton: true,
+          confirmButtonText: 'Hubungkan Spreadsheet',
+          cancelButtonText: 'Batal',
+          confirmButtonColor: '#2563eb',
+          inputValidator: value => {
+            const clean = extractCleanSpreadsheetIdClient(value);
+            if (!clean || clean.length < 15) {
+              return 'Masukkan Link atau ID Google Spreadsheet yang valid!';
+            }
+            return null;
+          }
+        });
+
+        if (inputSs) {
+          const clean = extractCleanSpreadsheetIdClient(inputSs);
+          try {
+            localStorage.setItem(STORAGE_KEYS.CLIENT_SS_ID, clean);
+          } catch (e) {}
+          return clean;
+        }
+        return '';
+      }
+
       async function callServer(funcName, ...args) {
         // 1. Jika dibuka langsung dari URL Google Apps Script, gunakan google.script.run asli
         if (isNativeGasEnvironment()) {
@@ -6216,7 +6282,18 @@
           showLoader('Menghubungkan ke server Spreadsheet...');
         }
 
-        const targetSpreadsheetId = String(CLIENT_SPREADSHEET_ID || '').trim();
+        let targetSpreadsheetId = getConfiguredClientSpreadsheetId();
+        if (!targetSpreadsheetId) {
+          if (funcName === 'getPengaturanWebsite') {
+            return { status: 'error', message: 'CLIENT_SPREADSHEET_ID belum diisi.' };
+          }
+          hideLoader();
+          targetSpreadsheetId = await promptConfigureClientSpreadsheetId();
+          if (!targetSpreadsheetId) {
+            throw new Error('ID Google Spreadsheet belum diisi. Silakan isi CLIENT_SPREADSHEET_ID di index.html.');
+          }
+          showLoader('Memverifikasi ID Spreadsheet...');
+        }
 
         const payloadStr = JSON.stringify({
           action: funcName,

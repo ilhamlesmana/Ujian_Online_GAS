@@ -95,15 +95,29 @@ function ensureDataPembeliSheet_(masterSs) {
 
 /**
  * Memeriksa apakah Spreadsheet ID pembeli terdaftar dan berstatus AKTIF di sheet DATA_PEMBELI.
+ * KEAMANAN MULTI-PEMBELI KETAT:
+ * 1. Setiap pemanggilan dari Vercel / Frontend Eksternal WAJIB menyertakan CLIENT_SPREADSHEET_ID.
+ * 2. Jika CLIENT_SPREADSHEET_ID kosong (''), server MENOLAK akses (TIDAK AKAN jatuh/fallback ke Master Sheet Anda!).
+ * 3. Master Sheet Anda hanya berisi sheet kontrol DATA_PEMBELI (atau hanya bisa diakses nếu ID-nya memang ditulis eksplisit & berstatus AKTIF di DATA_PEMBELI).
  */
-function verifyBuyerSpreadsheetAccess_(rawBuyerSpreadsheetId) {
+function verifyBuyerSpreadsheetAccess_(rawBuyerSpreadsheetId, isExternalApiCall) {
   const masterSs = getMasterOwnerSpreadsheet_();
   const masterId = masterSs.getId();
   const cleanTargetId = extractCleanSpreadsheetId_(rawBuyerSpreadsheetId);
 
-  // Jika tidak mengirim spreadsheetId khusus, atau sama dengan Master Spreadsheet Anda sendiri -> Izinkan
-  if (!cleanTargetId || cleanTargetId === masterId) {
-    return { allowed: true, targetId: masterId, isMaster: true };
+  // JIKA FRONTEND TIDAK MENGISI CLIENT_SPREADSHEET_ID -> LANGSUNG TOLAK!
+  // Ini menjamin meskipun GAS_WEB_APP_URL Anda tercantum di index.html pembeli,
+  // pembeli TIDAK AKAN PERNAH bisa masuk ke Master Spreadsheet Anda!
+  if (!cleanTargetId) {
+    if (!isExternalApiCall) {
+      return { allowed: true, targetId: masterId, isMaster: true };
+    }
+    return {
+      allowed: false,
+      code: "MISSING_SPREADSHEET_ID",
+      message:
+        "ID Google Spreadsheet sekolah/pembeli belum dihubungkan. Silakan masukkan ID atau Link Google Spreadsheet Anda untuk mengaktifkan aplikasi."
+    };
   }
 
   const sheetPembeli = ensureDataPembeliSheet_(masterSs);
@@ -111,7 +125,8 @@ function verifyBuyerSpreadsheetAccess_(rawBuyerSpreadsheetId) {
   if (lastRow <= 1) {
     return {
       allowed: false,
-      message: "ID Spreadsheet (" + cleanTargetId + ") belum terdaftar di sistem. Silakan hubungi Developer untuk aktivasi."
+      code: "SPREADSHEET_NOT_REGISTERED",
+      message: "ID Spreadsheet (" + cleanTargetId + ") belum terdaftar di server pusat. Silakan hubungi Developer untuk aktivasi."
     };
   }
 
@@ -124,10 +139,16 @@ function verifyBuyerSpreadsheetAccess_(rawBuyerSpreadsheetId) {
 
     if (rowSsId && rowSsId === cleanTargetId) {
       if (status === "AKTIF" || status === "ACTIVE" || status === "YA" || status === "OPEN" || status === "1") {
-        return { allowed: true, targetId: cleanTargetId, isMaster: false, namaSekolah: namaSekolah };
+        return {
+          allowed: true,
+          targetId: cleanTargetId,
+          isMaster: cleanTargetId === masterId,
+          namaSekolah: namaSekolah
+        };
       } else {
         return {
           allowed: false,
+          code: "SPREADSHEET_DISABLED",
           message:
             "Akses Aplikasi untuk " +
             namaSekolah +
@@ -142,6 +163,7 @@ function verifyBuyerSpreadsheetAccess_(rawBuyerSpreadsheetId) {
 
   return {
     allowed: false,
+    code: "SPREADSHEET_NOT_REGISTERED",
     message:
       "ID Spreadsheet (" +
       cleanTargetId +
@@ -151,8 +173,12 @@ function verifyBuyerSpreadsheetAccess_(rawBuyerSpreadsheetId) {
 
 /**
  * ============================================================================
- * GENERATOR 9 SHEET BERELASI (JALANKAN SEKALI DARI EDITOR APPS SCRIPT)
+ * GENERATOR 10 SHEET BERELASI — 100% AMAN & ANTI-TIMPA (NON-DESTRUCTIVE)
  * ============================================================================
+ * Catatan Keamanan:
+ * - Jika sebuah sheet SUDAH ADA dan SUDAH BERISI DATA (baris > 1), fungsi ini
+ *   TIDAK AKAN menghapus/menimpa data yang sudah ada!
+ * - Fungsi ini hanya membuat sheet yang belum ada atau mengisi sheet yang masih kosong.
  */
 function setupDatabaseDanDataAwal() {
   const ss = getSpreadsheet_(true);
@@ -260,6 +286,10 @@ function setupDatabaseDanDataAwal() {
     let sheet = ss.getSheetByName(sheetName);
     if (!sheet) {
       sheet = ss.insertSheet(sheetName);
+    } else if (sheet.getLastRow() > 1) {
+      // PROTEKSI ANTI-TIMPA: Jika sheet sudah memiliki data (baris > 1), JANGAN pernah di-clear()!
+      Logger.log("Skip sheet [" + sheetName + "] karena sudah berisi data aktif (" + (sheet.getLastRow() - 1) + " baris).");
+      continue;
     } else {
       sheet.clear();
     }
@@ -277,7 +307,7 @@ function setupDatabaseDanDataAwal() {
     ensureDataPembeliSheet_(getMasterOwnerSpreadsheet_());
   } catch (e) {}
 
-  Logger.log("SUKSES! Database V3.0 (beserta DATA_ADMIN & DATA_PEMBELI) berhasil dibuat!");
+  Logger.log("SUKSES! Database V3.0 (beserta DATA_ADMIN & DATA_PEMBELI) siap digunakan tanpa menimpa data lama!");
 }
 
 /**
@@ -338,7 +368,7 @@ function handleExternalApiRequest_(action, args, buyerSpreadsheetId) {
   }
 
   // 1. Cek aktivasi Spreadsheet ID Pembeli di sheet DATA_PEMBELI milik Anda
-  const accessCheck = verifyBuyerSpreadsheetAccess_(buyerSpreadsheetId);
+  const accessCheck = verifyBuyerSpreadsheetAccess_(buyerSpreadsheetId, true);
   if (!accessCheck.allowed) {
     return ContentService.createTextOutput(
       JSON.stringify({
@@ -368,6 +398,10 @@ function handleExternalApiRequest_(action, args, buyerSpreadsheetId) {
     return ContentService.createTextOutput(
       JSON.stringify({ status: "error", message: err && err.message ? err.message : String(err) })
     ).setMimeType(ContentService.MimeType.JSON);
+  } finally {
+    // Reset state koneksi setelah request selesai agar 100% terisolasi antar pembeli
+    _activeTargetSpreadsheetId = "";
+    _cachedSs = null;
   }
 }
 
