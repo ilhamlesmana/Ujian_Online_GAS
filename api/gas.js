@@ -10,7 +10,7 @@
 
 const DEFAULT_GAS_URL =
   process.env.GAS_WEB_APP_URL ||
-  'https://script.google.com/macros/s/AKfycbzO6vC9iRuMXCcRdhORokDzAqAK_0cvL6APHJzhKgC1CFwWg9VdQgnzv_Hwh0y9XWCq/exec';
+  'https://script.google.com/macros/s/AKfycbyfOKlaGhb8cKmGo2PCIEGI5Jp2gF_4_gh4I3Q0-pTCMtMc3Rzi7A6CDBuQNsgoNR7p/exec';
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');

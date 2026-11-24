@@ -100,24 +100,14 @@ function ensureDataPembeliSheet_(masterSs) {
  * 2. Jika CLIENT_SPREADSHEET_ID kosong (''), server MENOLAK akses (TIDAK AKAN jatuh/fallback ke Master Sheet Anda!).
  * 3. Master Sheet Anda hanya berisi sheet kontrol DATA_PEMBELI (atau hanya bisa diakses nếu ID-nya memang ditulis eksplisit & berstatus AKTIF di DATA_PEMBELI).
  */
-function verifyBuyerSpreadsheetAccess_(rawBuyerSpreadsheetId, isExternalApiCall) {
+function verifyBuyerSpreadsheetAccess_(rawBuyerSpreadsheetId) {
   const masterSs = getMasterOwnerSpreadsheet_();
   const masterId = masterSs.getId();
   const cleanTargetId = extractCleanSpreadsheetId_(rawBuyerSpreadsheetId);
 
-  // JIKA FRONTEND TIDAK MENGISI CLIENT_SPREADSHEET_ID -> LANGSUNG TOLAK!
-  // Ini menjamin meskipun GAS_WEB_APP_URL Anda tercantum di index.html pembeli,
-  // pembeli TIDAK AKAN PERNAH bisa masuk ke Master Spreadsheet Anda!
-  if (!cleanTargetId) {
-    if (!isExternalApiCall) {
-      return { allowed: true, targetId: masterId, isMaster: true };
-    }
-    return {
-      allowed: false,
-      code: "MISSING_SPREADSHEET_ID",
-      message:
-        "ID Google Spreadsheet sekolah/pembeli belum dihubungkan. Silakan masukkan ID atau Link Google Spreadsheet Anda untuk mengaktifkan aplikasi."
-    };
+  // Jika CLIENT_SPREADSHEET_ID kosong ('') atau sama dengan Master Spreadsheet Anda -> Langsung izinkan!
+  if (!cleanTargetId || cleanTargetId === masterId) {
+    return { allowed: true, targetId: masterId, isMaster: true };
   }
 
   const sheetPembeli = ensureDataPembeliSheet_(masterSs);
