@@ -40,7 +40,7 @@ real-time!
    - **Global Smart Search (`Ctrl + K`) & Pencarian Per Tabel**: Memudahkan Admin,
      Guru, dan Siswa mencari menu, soal, nama siswa, NIS, atau nilai dalam hitungan
      milidetik. (Otomatis disembunyikan saat siswa sedang mengerjakan ujian).
-   - **Auto-Resume Session**: Sesi login dan progres ujian siswa tetap
+   - **Akses Cepat & Auto-Resume Session**: Sesi login dan progres ujian siswa tetap
      tersimpan aman meskipun halaman browser tidak sengaja ter-refresh.
 
 2. 🛡️ SISTEM KEAMANAN UJIAN BERLAPIS (MULTI-LAYER ANTI-CHEAT ENGINE)
