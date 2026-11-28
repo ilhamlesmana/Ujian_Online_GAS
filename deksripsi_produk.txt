@@ -1,0 +1,210 @@
+================================================================================
+🎓 SISTEM UJIAN ONLINE SEKOLAH DIGITAL (CBT WEB APP PRO V3.0 - LIFETIME EDITION)
+Solusi Evaluasi & Ujian Berbasis Komputer (CBT) Modern, Anti-Cheat Berlapis,
+Responsive (HP/Tablet/PC), dengan Database Google Spreadsheet Milik Sekolah Sendiri!
+================================================================================
+
+🌟 RINGKASAN PRODUK
+-------------------
+Ingin memiliki aplikasi Ujian Online (CBT) modern sekelas platform pendidikan
+premium tanpa harus membayar biaya sewa server bulanan/tahunan (VPS/Cloud Hosting)
+yang mahal?
+
+**CBT Sekolah Digital Pro V3.0** adalah aplikasi web ujian online generasi terbaru
+dengan desain **Bento UI Modern (Dark & Light Mode)** yang di-hosting di **Vercel
+Global CDN** (super cepat, stabil, dan bisa menggunakan nama domain sekolah) serta
+menggunakan **Google Spreadsheet pribadi milik sekolah Anda** sebagai database
+real-time!
+
+✅ **BELI SEKALI UNTUK SELAMANYA (LIFETIME ACCESS)**
+✅ **GRATIS BIAYA SERVER & DATABASE SELAMANYA** (Database di Google Sheet Anda sendiri)
+✅ **DATA 100% PRIVAT & AMAN** (Spreadsheet tetap berstatus "Restricted / Dibatasi",
+   tidak perlu dibuka ke publik!)
+✅ **MENDUKUNG SEMUA JENJANG PENDIDIKAN**: SD/MI, SMP/MTs, SMA/SMK/MA (Kelas 1 s/d Kelas 12)
+✅ **BISA PASANG SENDIRI ATAU KAMI SETTINGKAN TERIMA BERES SAMPAI ONLINE DI HOSTING!**
+
+
+================================================================================
+🔥 KEUNGGULAN UTAMA & FITUR LENGKAP APLIKASI
+================================================================================
+
+1. 🖥️ DESAIN UI/UX KELAS ENTERPRISE (BENTO DESIGN SYSTEM)
+   - **Dual Theme (Dark Mode & Light Mode)** dengan animasi transisi *Circular Ripple*
+     yang elegan dan nyaman di mata siswa maupun guru.
+   - **100% Responsive Mobile-First (HP, Tablet, Laptop, PC)**:
+     - Di layar HP, menu otomatis berubah menjadi **Bottom Navigation Bar** bergaya
+       aplikasi native Android/iOS.
+     - Seluruh tabel data di HP otomatis berubah menjadi **Mode Kartu Terstruktur**
+       (100% pas di layar HP tanpa melebar/terpotong) dilengkapi tombol switch
+       *Mode Kartu / Mode Tabel*.
+   - **Global Smart Search (`Ctrl + K`) & Pencarian Per Tabel**: Memudahkan Admin,
+     Guru, dan Siswa mencari menu, soal, nama siswa, NIS, atau nilai dalam hitungan
+     milidetik. (Otomatis disembunyikan saat siswa sedang mengerjakan ujian).
+   - **Auto-Resume Session**: Sesi login dan progres ujian siswa tetap
+     tersimpan aman meskipun halaman browser tidak sengaja ter-refresh.
+
+2. 🛡️ SISTEM KEAMANAN UJIAN BERLAPIS (MULTI-LAYER ANTI-CHEAT ENGINE)
+   - **Wajib Mode Layar Penuh (Fullscreen Lock)**: Saat ujian dimulai, layar siswa
+     otomatis terkunci dalam mode Fullscreen. Jika siswa keluar dari Fullscreen atau
+     mengecilkan layar, lembar soal seketika tertutup layar peringatan & efek blur!
+   - **Deteksi Pindah Tab, Pindah Aplikasi & Split-Screen**: Mencatat secara otomatis
+     jika siswa berpindah tab browser, membuka aplikasi lain di HP, atau membuka
+     jendela mengambang (*floating window*).
+   - **Blokir Screenshot & ShortcutTerlarang**: Memblokir tombol `PrintScreen`,
+     `Win+Shift+S`, `Ctrl+C` (Copy), `Ctrl+V` (Paste), `Ctrl+U`, `Ctrl+P`, `F12`
+     (Inspect Element), serta klik kanan.
+   - **Laporan Detail Poin Kecurangan ke Guru**: Setiap pelanggaran siswa dicatat
+     lengkap dengan *Jenis Pelanggaran, Deskripsi, Waktu Kejadian, dan Nomor Soal
+     yang sedang dibuka*. Guru dapat melihat rinciannya langsung di tabel Rekap Nilai!
+
+3. 👨‍🏫 PORTAL GURU (TERISOLASI KETAT PER MAPEL & ROMBEL KELAS)
+   - **Isolasi Penuh Per Guru & Rombel Kelas**: Guru A (misal Matematika Kelas 10-A & 10-B)
+     hanya bisa melihat dan mengelola soal, jadwal, serta nilai siswa untuk kelas yang
+     diampunya saja. Tidak akan bercampur dengan guru lain meskipun mengajar mata
+     pelajaran atau tingkat kelas yang sama!
+   - **Import Soal Instan dari Microsoft Word (`.docx`)**: Guru cukup mengunggah file
+     Word berisi soal pilihan ganda (A–E), sistem otomatis membaca semua butir soal,
+     pilihan jawaban, gambar/audio, dan kunci jawaban dalam 1 detik!
+   - **Batch Input Soal**: Tambah banyak butir soal sekaligus dalam satu halaman form.
+   - **Export Bank Soal ke Microsoft Word (`.docx`) & PDF A4 Siap Cetak**:
+     - Unduh bank soal sesuai filter Mata Pelajaran & Jenis Penilaian menjadi dokumen
+       **Microsoft Word (`.docx`)** maupun **PDF (`.pdf`)** lengkap dengan Kop Sekolah,
+       Informasi Guru, Pilihan Jawaban, dan Kunci Jawaban yang rapi.
+   - **Mendukung Soal Bergambar & Audio (Listening)**: Mudah menyisipkan gambar atau
+     suara dari Google Drive / URL dilengkapi fitur *Zoom Gambar* bagi siswa.
+   - **Manajemen Jadwal & Pengaturan Ujian**:
+     - Buka/Tutup ujian (`OPEN` / `CLOSE`) dengan 1 klik.
+     - Atur durasi waktu ujian (Timer hitung mundur otomatis).
+     - Sakelar **Acak Urutan Soal** (`YA`/`TIDAK`) & **Acak Opsi Jawaban A–E** (`YA`/`TIDAK`).
+     - Sakelar **Tampilkan Nilai & Pembahasan ke Siswa** (`YA`/`TIDAK`): Guru bebas
+       menentukan apakah nilai langsung tampil setelah siswa selesai ujian atau
+       disembunyikan terlebih dahulu.
+   - **Rekapitulasi Nilai Lengkap (Termasuk Siswa yang Belum Mengerjakan)**:
+     - Otomatis mendeteksi dan menampilkan siapa saja siswa di kelas ampuan yang
+       **Sudah Mengerjakan** maupun yang **Belum Mengerjakan**.
+     - Fitur **Reset Ujian Siswa** (1 klik) untuk mengizinkan siswa mengulang ujian
+       (remedial/kendala teknis).
+     - **Export Rekap Nilai ke Excel (`.xlsx`) / CSV & Cetak Print A4** lengkap dengan
+       Kop Sekolah dan catatan pengawasan anti-cheat.
+   - **Master Jenis Penilaian Privat per Guru**: Setiap guru dapat membuat kategori
+     evaluasi sendiri (Ulangan Harian, PTS, PAS, Kuis, Try Out, Ujian Sekolah).
+
+4. 👨‍🎓 PORTAL SISWA (FOKUS, CEPAT & INTERAKTIF)
+   - **Filter Ujian Otomatis Sesuai Rombel Kelas**: Siswa yang login otomatis hanya
+     melihat paket ujian yang ditujukan untuk kelas/rombelnya saja.
+   - **Lembar Ujian Modern & Navigasi Nomor Soal**:
+     - Indikator warna jelas: **Hijau** (Sudah Dijawab), **Kuning** (Ragu-ragu),
+       **Putih** (Belum Dijawab).
+     - Validasi pengumpulan: Mencegah siswa tidak sengaja mengumpulkan ujian jika
+       masih ada nomor soal yang belum dijawab atau masih ditandai ragu-ragu.
+     - **Auto-Submit Saat Waktu Habis**: Jika timer mencapai `00:00:00`, jawaban
+       siswa otomatis tersimpan ke server.
+     - **Tombol Perbarui / Muat Ulang Soal Live**: Jika guru merevisi teks soal di
+       tengah ujian, siswa cukup menekan tombol *Perbarui Soal* tanpa kehilangan
+       jawaban yang sudah dipilih maupun sisa waktu ujian!
+   - **Riwayat Nilai & Pembahasan Soal**: Siswa dapat melihat riwayat nilai dan
+     pembahasan jawaban benar/salah (apabila diizinkan oleh Guru).
+   - **Ubah Password Mandiri**: Siswa dapat memperbarui password akunnya sendiri.
+
+5. 🛡️ PORTAL SUPER ADMINISTRATOR (KENDALI PENUH DARI WEB TANPA BUKA SPREADSHEET)
+   - **Manajemen Akun Guru + Rombel Picker Pintar**: Tambah/edit akun guru dan pilih
+     spesifik rombel kelas mana saja yang diajar oleh guru tersebut (dilengkapi
+     deteksi otomatis jika rombel sudah diampu guru lain).
+   - **Manajemen Master Mata Pelajaran (`MASTER_MAPEL`)**: Kelola seluruh mata
+     pelajaran dari Kelas 1 s/d Kelas 12 langsung dari web.
+   - **Manajemen Data Rombel Kelas (`DATA_KELAS`)**: Kelola daftar kelas & wali kelas
+     (otomatis terhubung ke data siswa dan penugasan guru).
+   - **Manajemen Akun Siswa (`DATA_SISWA`)**: Tambah/edit/hapus siswa, NIS, penempatan
+     rombel, serta fitur lihat/sembunyikan password.
+   - **Kustomisasi Identitas Website & Halaman Login (Live Preview)**:
+     - Ubah **Logo Sekolah** (bisa upload file gambar langsung dari komputer atau
+       pakai link/ID Google Drive), **Nama Sekolah/Website**, **Subtitle Navbar**,
+       **Judul & Tema Warna Gradient Halaman Login**, hingga **Email Notifikasi Hasil
+       Ujian Sekolah** secara langsung dari web dengan pratinjau real-time!
+
+
+================================================================================
+📦 APA SAJA YANG DIDAPATKAN PEMBELI?
+================================================================================
+
+1. **Full Source Code Frontend Siap Pakai & Siap Deploy (`index.html`, `api/gas.js`, `vercel.json`)**
+   - Seluruh tampilan UI Bento Modern (Admin, Guru, Siswa), sistem ujian Anti-Cheat,
+     Import/Export Word & PDF, serta Serverless Proxy Vercel yang 100% bebas blokir CORS.
+2. **Akses Lifetime ke Cloud Backend Engine Terpusat & Auto-Generator 10 Tabel Database**
+   - Anda **tidak perlu pusing** menulis atau mengutak-atik kode backend!
+   - Begitu **ID Google Spreadsheet** Anda dihubungkan, sistem kami akan **secara
+     otomatis membuatkan 10 Sheet Database Berelasi** beserta contoh data awal dan
+     akun login default di dalam Google Spreadsheet milik Anda!
+3. **Panduan Lengkap Penggunaan & Pengelolaan Aplikasi (Admin, Guru, Siswa)**.
+
+
+================================================================================
+⚙️ CARA AKTIVASI & PILIHAN PAKET INSTALASI (SANGAT MUDAH!)
+================================================================================
+
+Untuk menghubungkan aplikasi dengan Google Spreadsheet milik sekolah/instansi Anda,
+Anda hanya perlu menyiapkan **1 file Google Spreadsheet kosong** di akun Google Anda:
+
+1. Buat Google Spreadsheet baru di akun Google Anda ([https://sheets.new](https://sheets.new)).
+2. Klik tombol **Bagikan (Share)** di pojok kanan atas Google Spreadsheet Anda:
+   - **Opsi Privat (Direkomendasikan agar 100% Aman & Tidak Bocor)**: Biarkan akses
+     tetap **"Dibatasi (Restricted)"**, lalu tambahkan alamat **Email Sistem/Server
+     Developer** kami sebagai **Editor**.
+   - **Opsi Cepat**: Atau ubah akses menjadi *"Siapa saja yang memiliki link -> Editor"*.
+3. Salin **ID Google Spreadsheet** (atau Link Google Spreadsheet) Anda.
+
+Selanjutnya, Anda bebas memilih **2 Metode Setup** berikut:
+
+--------------------------------------------------------------------------------
+🅰️ OPSI 1: MANDIRI (DEPLOY SENDIRI DENGAN FRONTEND YANG KAMI BERIKAN)
+--------------------------------------------------------------------------------
+Cocok bagi Anda yang memiliki akun GitHub / Vercel sendiri:
+1. Kirimkan **ID / Link Google Spreadsheet** Anda kepada kami untuk kami daftarkan
+   status **`AKTIF` (Lifetime)** di server pusat.
+2. Masukkan ID Google Spreadsheet Anda pada baris `CLIENT_SPREADSHEET_ID` di dalam
+   file `index.html` (atau cukup masukkan **1 kali saja** melalui pop-up saat pertama
+   kali membuka website Vercel Anda — sistem otomatis mengikat domain website Anda
+   secara permanen sehingga **seluruh siswa & guru langsung masuk ke halaman login
+   tanpa pernah dimintai ID Spreadsheet lagi!**).
+3. Upload/Deploy paket Frontend ke akun **Vercel** Anda. Selesai!
+
+--------------------------------------------------------------------------------
+🅱️ OPSI 2: TERIMA BERES (PENJUAL YANG MENYETINGKAN FULL SAMPAI KE HOSTING!)
+--------------------------------------------------------------------------------
+Cocok bagi Sekolah/Guru yang tidak ingin repot mengurus teknis koding atau hosting:
+1. Anda **cukup memberikan Link/ID Google Spreadsheet** kosong milik Anda (yang sudah
+   dibagikan akses Editor ke email sistem kami) beserta **Nama Sekolah & Logo Sekolah**.
+2. **Tim kami yang akan menyetingkan semuanya dari nol sampai 100% Online di Hosting
+   Vercel** (termasuk setup database 10 sheet otomatis, pengikatan domain website
+   sekolah Anda, hingga pengujian login Admin, Guru, dan Siswa).
+3. Anda tinggal terima **Link Website Ujian Online Sekolah Anda yang sudah siap pakai**
+   beserta akun Administrator, sementara seluruh database Google Spreadsheet tetap
+   100% berada di dalam akun Google milik Anda sendiri!
+
+
+================================================================================
+📊 DAFTAR 10 TABEL DATABASE OTOMATIS DI GOOGLE SPREADSHEET ANDA
+================================================================================
+Saat ID Spreadsheet Anda diaktifkan, sistem otomatis men-generate 10 tabel berikut
+lengkap dengan format header berwarna dan contoh data awal (tanpa pernah menimpa
+data yang sudah Anda isi):
+
+1. `DATA_ADMIN`             : Akun Super Administrator Sekolah
+2. `MASTER_MAPEL`           : Master Mata Pelajaran (Mendukung Kelas 1 s/d Kelas 12)
+3. `MASTER_JENIS_PENILAIAN` : Kategori Evaluasi Terisolasi per Guru (UH, PTS, PAS, US)
+4. `DATA_KELAS`             : Master Rombel Kelas & Wali Kelas
+5. `DATA_GURU`              : Akun Guru & Pembagian Mapel/Rombel Spesifik
+6. `DATA_SISWA`             : Akun Peserta Didik, NIS, & Rombel Kelas
+7. `BANK_SOAL`              : Butir Soal Pilihan Ganda (A–E), Gambar, Audio, & Kunci
+8. `PENGATURAN_UJIAN`       : Status OPEN/CLOSE, Durasi, Acak Soal/Opsi, & Visibilitas Nilai
+9. `HASIL_UJIAN`            : Rekaman Jawaban, Nilai Akhir, & Log Poin Anti-Cheat Siswa
+10. `PENGATURAN_WEBSITE`    : Nama Sekolah, Logo, Tema Login, & Email Notifikasi Sekolah
+
+
+================================================================================
+📞 HUBUNGI KAMI SEKARANG UNTUK PEMESANAN & DEMO LIVE!
+================================================================================
+Dapatkan **Sistem Ujian Online Sekolah Digital (CBT Web App Pro V3.0)** sekarang juga.
+Sekali beli untuk selamanya, bebas biaya bulanan, tampilan mewah di HP & Komputer,
+dan data 100% aman di Google Spreadsheet milik Anda sendiri!
+================================================================================
